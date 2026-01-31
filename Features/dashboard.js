@@ -217,7 +217,7 @@ export async function handleDashboardInteractions(client, interaction) {
     });
 
     return interaction.reply({
-      content: `✅ Ticket created: <#${channel.id}>`,
+      content: `You have successfully created a support ticket. View your ticket ⁠<#${channel.id}>.`,
       ephemeral: true
     });
   }
