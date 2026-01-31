@@ -347,14 +347,16 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
     }
 
+    // ACK immediately
+    await interaction.deferUpdate().catch(() => {});
+
+    // If already disabled, ignore
     const alreadyDisabled = interaction.message.components?.some((row) =>
       row.components?.some((c) => c.customId?.startsWith(IDS.ratePrefix + ":") && c.disabled)
     );
-    if (alreadyDisabled) {
-      return interaction.reply({ content: "You already rated this ticket.", ephemeral: true });
-    }
+    if (alreadyDisabled) return;
 
-    // Build disabled buttons + confirm
+    // Disable ALL rating buttons
     const disabledRow = new ActionRowBuilder();
     for (let i = 1; i <= 5; i++) {
       disabledRow.addComponents(
@@ -367,26 +369,21 @@ export async function handleDashboardInteractions(client, interaction) {
     }
 
     const confirm = layoutMessage(
-      `## ✅ **Thank you for rating**\n` +
+      `## ✅ **Thanks for rating**\n` +
         `> You rated this ticket **${rating}/5**.`
     );
 
-    // Update UI first (stop spam). Never show error.
-    let uiUpdated = false;
+    // FORCE EDIT the message to disable buttons
     try {
-      await interaction.update({ content: "", components: [...confirm.components, disabledRow.toJSON()] });
-      uiUpdated = true;
-    } catch {
-      try {
-        await interaction.deferUpdate().catch(() => {});
-        await interaction.message.edit({ content: "", components: [...confirm.components, disabledRow.toJSON()] });
-        uiUpdated = true;
-      } catch {
-        // ignore
-      }
+      await interaction.message.edit({
+        content: "",
+        components: [...confirm.components, disabledRow.toJSON()]
+      });
+    } catch (e) {
+      console.error("Failed to disable rating buttons:", e);
     }
 
-    // Best-effort log, never complain
+    // Best-effort log; never message user if it fails
     try {
       const ratingLog = layoutMessage(
         `## ⭐ **Ticket Rated**\n` +
@@ -396,12 +393,8 @@ export async function handleDashboardInteractions(client, interaction) {
           `> **Rating:** **${rating}/5**`
       );
       await logTicketMessage(client, conf, ratingLog);
-    } catch (e) {
-      console.error("Rating log failed (ignored):", e);
-    }
-
-    if (!uiUpdated) {
-      return interaction.reply({ content: `Thanks! You rated **${rating}/5**.`, ephemeral: true }).catch(() => {});
+    } catch {
+      // ignore
     }
 
     return;
