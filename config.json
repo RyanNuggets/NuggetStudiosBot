@@ -10,5 +10,10 @@
 
     "ticketChannelNameFormat": "ticket-{username}",
     "ticketLogsChannelId": "1467066668814696531"
+  },
+
+  "welcome": {
+    "enabled": true,
+    "channelId": "1466860445653795007"
   }
 }
