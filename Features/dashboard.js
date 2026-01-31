@@ -121,7 +121,6 @@ const BRAND_IMAGE =
 
 function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   const components = [];
-
   if (pingLine) components.push({ type: 10, content: pingLine });
 
   components.push({
@@ -177,22 +176,64 @@ async function postRawDM(client, userId, body, files = undefined) {
 async function logTicket(client, conf, body, files = undefined) {
   const logId = conf.ticketLogsChannelId;
   if (!logId) return;
-  try {
-    await postRaw(client, logId, body, files);
-  } catch {
-    // never break ticket flow
-  }
+  await postRaw(client, logId, body, files);
 }
 
-// ---------------- TRANSCRIPT BUILDER (.txt) ----------------
-async function buildTranscript(channel, maxMessages = 2000) {
-  const lines = [];
-  lines.push(`Ticket Transcript`);
-  lines.push(`Channel: #${channel.name} (${channel.id})`);
-  lines.push(`Created: ${new Date(channel.createdTimestamp).toISOString()}`);
-  lines.push(`Topic: ${channel.topic ?? ""}`);
-  lines.push(`----------------------------------------\n`);
+// ---------------- TRANSCRIPT (.html) ----------------
+const escapeHtml = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
+function htmlWrapper({ title, subtitle, bodyHtml }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)}</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0b0d10; color:#e8eef6; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+  .card { background: #0f1318; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; overflow: hidden; }
+  .hdr { padding: 18px 18px 0; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .sub { color: rgba(232,238,246,.7); font-size: 12px; margin: 0 0 14px; }
+  .meta { display:flex; gap:10px; flex-wrap: wrap; font-size: 12px; color: rgba(232,238,246,.75); padding: 0 18px 14px; }
+  .pill { padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.06); }
+  table { width: 100%; border-collapse: collapse; }
+  tr { border-top: 1px solid rgba(255,255,255,.06); }
+  td { padding: 12px 18px; vertical-align: top; }
+  .ts { width: 210px; color: rgba(232,238,246,.65); font-size: 12px; white-space: nowrap; }
+  .auth { width: 260px; font-size: 12px; color: rgba(232,238,246,.85); }
+  .msg { font-size: 13px; line-height: 1.35; white-space: pre-wrap; }
+  .att { margin-top: 6px; font-size: 12px; color: rgba(232,238,246,.7); }
+  a { color: #8ab4ff; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="hdr">
+        <h1>${escapeHtml(title)}</h1>
+        <p class="sub">${escapeHtml(subtitle)}</p>
+      </div>
+      ${bodyHtml}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function buildTranscriptHtml(channel, maxMessages = 4000) {
+  const headerTitle = `Ticket Transcript — #${channel.name}`;
+  const headerSub = `Channel ID: ${channel.id}`;
+
+  // fetch messages
   let lastId = undefined;
   const collected = [];
 
@@ -202,7 +243,6 @@ async function buildTranscript(channel, maxMessages = 2000) {
       ...(lastId ? { before: lastId } : {})
     });
     if (!batch || batch.size === 0) break;
-
     collected.push(...batch.values());
     lastId = batch.last().id;
     if (batch.size < 100) break;
@@ -210,25 +250,120 @@ async function buildTranscript(channel, maxMessages = 2000) {
 
   collected.reverse();
 
+  const meta = `
+    <div class="meta">
+      <div class="pill">Created: ${escapeHtml(new Date(channel.createdTimestamp).toISOString())}</div>
+      <div class="pill">Messages: ${escapeHtml(collected.length)}</div>
+      <div class="pill">Topic: ${escapeHtml(channel.topic ?? "")}</div>
+    </div>
+  `;
+
+  let rows = "";
   for (const msg of collected) {
     const ts = new Date(msg.createdTimestamp).toISOString();
     const author = `${msg.author?.tag ?? "Unknown"} (${msg.author?.id ?? "?"})`;
-    const content = (msg.content ?? "").replace(/\r/g, "");
+    const content = msg.content ?? "";
 
-    lines.push(`[${ts}] ${author}`);
-    if (content) lines.push(content);
-
+    let attachmentsHtml = "";
     if (msg.attachments?.size) {
+      const items = [];
       for (const att of msg.attachments.values()) {
-        lines.push(`(attachment) ${att.name ?? "file"} - ${att.url}`);
+        items.push(
+          `<div class="att">(attachment) ${escapeHtml(att.name ?? "file")} — <a href="${escapeHtml(att.url)}">${escapeHtml(att.url)}</a></div>`
+        );
       }
+      attachmentsHtml = items.join("");
     }
 
-    if (msg.embeds?.length) lines.push(`(embeds) ${msg.embeds.length} embed(s)`);
-    lines.push("");
+    // basic indicator for embeds
+    const embedsNote = msg.embeds?.length ? `<div class="att">(embeds) ${msg.embeds.length} embed(s)</div>` : "";
+
+    rows += `
+      <tr>
+        <td class="ts">${escapeHtml(ts)}</td>
+        <td class="auth">${escapeHtml(author)}</td>
+        <td class="msg">${escapeHtml(content)}${attachmentsHtml}${embedsNote}</td>
+      </tr>
+    `;
   }
 
-  return lines.join("\n");
+  const table = `<table>${rows}</table>`;
+  return htmlWrapper({
+    title: headerTitle,
+    subtitle: headerSub,
+    bodyHtml: meta + table
+  });
+}
+
+// Discord upload safety: split into multiple html files if needed
+function splitHtmlFiles({ html, baseName }) {
+  // Safe bot upload cap ~7.5MB each (headroom under 8MB)
+  const MAX_BYTES = 7_500_000;
+  const buf = Buffer.from(html, "utf8");
+  if (buf.length <= MAX_BYTES) {
+    return [{ attachment: buf, name: baseName }];
+  }
+
+  // Split by chunks while keeping valid HTML per part.
+  // We’ll split the BODY table rows across parts.
+  // Find a spot to split: between <tr>...</tr> blocks.
+  const parts = [];
+  const htmlStr = html;
+
+  // Very simple approach: split by row boundaries.
+  const start = htmlStr.indexOf("<table>");
+  const end = htmlStr.lastIndexOf("</table>");
+  if (start === -1 || end === -1 || end <= start) {
+    // fallback: raw byte chunking (still valid-ish)
+    let offset = 0;
+    let idx = 1;
+    while (offset < buf.length) {
+      const chunk = buf.slice(offset, offset + MAX_BYTES);
+      parts.push({ attachment: chunk, name: baseName.replace(".html", `-part${idx}.html`) });
+      offset += MAX_BYTES;
+      idx++;
+    }
+    return parts;
+  }
+
+  const head = htmlStr.slice(0, start + "<table>".length);
+  const tail = htmlStr.slice(end); // includes </table>...rest
+  const rowsBlob = htmlStr.slice(start + "<table>".length, end);
+
+  // split rowsBlob by </tr>
+  const rows = rowsBlob.split("</tr>").map((r) => (r.trim() ? r + "</tr>" : "")).filter(Boolean);
+
+  let current = "";
+  let idx = 1;
+
+  const pushPart = (rowsHtml) => {
+    const partHtml = head + rowsHtml + tail;
+    parts.push({
+      attachment: Buffer.from(partHtml, "utf8"),
+      name: baseName.replace(".html", `-part${idx}.html`)
+    });
+    idx++;
+  };
+
+  for (const r of rows) {
+    const next = current + r;
+    const size = Buffer.byteLength(head + next + tail, "utf8");
+
+    if (size > MAX_BYTES && current) {
+      pushPart(current);
+      current = r;
+    } else if (size > MAX_BYTES && !current) {
+      // single row too large, force push anyway
+      pushPart(r);
+      current = "";
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) pushPart(current);
+
+  return parts;
 }
 
 // ---------------- BUILD TICKET OPEN MESSAGE ----------------
@@ -294,40 +429,37 @@ export async function handleDashboardInteractions(client, interaction) {
 
   // ---------------- RATING BUTTONS (DM) ----------------
   if (interaction.isButton?.() && interaction.customId.startsWith(IDS.ratePrefix + ":")) {
-    const parts = interaction.customId.split(":");
-    const ticketId = parts[1];
-    const openerId = parts[2];
-    const handlerId = parts[3];
-    const rating = parts[4];
+    const [_, ticketId, openerId, handlerId, rating] = interaction.customId.split(":");
 
     if (interaction.user.id !== openerId) {
       return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
     }
 
-    const ratingLog = layoutMessage(
-      `## ⭐ **Ticket Rated**\n` +
-        `> **Ticket:** \`${ticketId}\`\n` +
-        `> **Opener:** <@${openerId}>\n` +
-        `> **Handler:** ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
-        `> **Rating:** **${rating}/5**`
-    );
-    await logTicket(client, conf, ratingLog);
-
-    // Disable buttons
     try {
+      const ratingLog = layoutMessage(
+        `## ⭐ **Ticket Rated**\n` +
+          `> **Ticket:** \`${ticketId}\`\n` +
+          `> **Opener:** <@${openerId}>\n` +
+          `> **Handler:** ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+          `> **Rating:** **${rating}/5**`
+      );
+      await logTicket(client, conf, ratingLog);
+
+      // Disable buttons on the DM message
       const disabledRow = new ActionRowBuilder().addComponents(
         interaction.message.components[0].components.map((b) => ButtonBuilder.from(b).setDisabled(true))
       );
 
       const confirm = layoutMessage(`## ✅ **Thank you!**\n> You rated this ticket **${rating}/5**.`);
-
       await interaction.update({
         content: "",
         components: [...confirm.components, disabledRow.toJSON()]
       });
-    } catch {
-      await interaction.reply({ content: `Thanks! You rated this ticket **${rating}/5**.`, ephemeral: true });
+    } catch (e) {
+      console.error("Rating handling failed:", e);
+      return interaction.reply({ content: "Rating failed to log. Please try again.", ephemeral: true });
     }
+
     return;
   }
 
@@ -406,7 +538,7 @@ export async function handleDashboardInteractions(client, interaction) {
       conf.ticketChannelNameFormat.replace("{username}", interaction.user.username)
     );
 
-    // perms: opener + staffRole only (management should NOT include support)
+    // perms: opener + staffRole only
     const channel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
@@ -430,7 +562,9 @@ export async function handleDashboardInteractions(client, interaction) {
             PermissionFlagsBits.ViewChannel,
             PermissionFlagsBits.SendMessages,
             PermissionFlagsBits.ReadMessageHistory,
-            PermissionFlagsBits.ManageMessages
+            PermissionFlagsBits.ManageMessages,
+            PermissionFlagsBits.AttachFiles,
+            PermissionFlagsBits.EmbedLinks
           ]
         }
       ]
@@ -447,19 +581,23 @@ export async function handleDashboardInteractions(client, interaction) {
       })
     );
 
-    // LOG: opened (component-based)
-    const openedLog = layoutMessage(
-      `## 🟢 **Ticket Opened**\n` +
-        `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
-        `> **Opener:** <@${interaction.user.id}>\n` +
-        `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**\n` +
-        `> **Staff Role:** <@&${staffRoleId}>\n` +
-        `> **Enquiry:** ${enquiry.length > 250 ? enquiry.slice(0, 250) + "…" : enquiry}`
-    );
-    await logTicket(client, conf, openedLog);
+    // Log opened (component-based)
+    try {
+      const openedLog = layoutMessage(
+        `## 🟢 **Ticket Opened**\n` +
+          `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+          `> **Opener:** <@${interaction.user.id}>\n` +
+          `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**\n` +
+          `> **Staff Role:** <@&${staffRoleId}>\n` +
+          `> **Enquiry:** ${enquiry.length > 250 ? enquiry.slice(0, 250) + "…" : enquiry}`
+      );
+      await logTicket(client, conf, openedLog);
+    } catch (e) {
+      console.error("Log ticket opened failed:", e);
+    }
 
     return interaction.reply({
-      content: `You have successfully created a **${ticketTypeLabel(ticketTypeValue)}** ticket. View your ticket ⁠<#${channel.id}>.`,
+      content: `You have successfully created a ticket. View your ticket ⁠<#${channel.id}>.`,
       ephemeral: true
     });
   }
@@ -512,7 +650,8 @@ export async function handleDashboardInteractions(client, interaction) {
         });
         return interaction.reply({ content: `Added <@${targetId}> to this ticket.`, ephemeral: true });
       }
-    } catch {
+    } catch (e) {
+      console.error("Toggle user failed:", e);
       return interaction.reply({ content: "Failed to update ticket permissions.", ephemeral: true });
     }
   }
@@ -534,7 +673,7 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
-    // CLAIM (one person only, locked by topic)
+    // CLAIM
     if (action === "claim") {
       const topic = channel.topic ?? "";
       if (hasClaimTag(topic)) {
@@ -556,16 +695,20 @@ export async function handleDashboardInteractions(client, interaction) {
         await channel.setTopic(appendTopicTag(topic, claimedTopicTag(interaction.user.id)));
       } catch {}
 
-      // LOG: claimed (component-based)
-      const claimedLog = layoutMessage(
-        `## 🟡 **Ticket Claimed**\n` +
-          `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
-          `> **Claimed By:** <@${interaction.user.id}>\n` +
-          `> **Staff Role:** <@&${staffRoleId}>`
-      );
-      await logTicket(client, conf, claimedLog);
+      // Log claimed
+      try {
+        const claimedLog = layoutMessage(
+          `## 🟡 **Ticket Claimed**\n` +
+            `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+            `> **Claimed By:** <@${interaction.user.id}>\n` +
+            `> **Staff Role:** <@&${staffRoleId}>`
+        );
+        await logTicket(client, conf, claimedLog);
+      } catch (e) {
+        console.error("Log ticket claimed failed:", e);
+      }
 
-      // visual placeholder update (optional)
+      // Optional visual update
       try {
         const newComponents = msg.components.map((row) => {
           const rowJson = row.toJSON();
@@ -583,7 +726,7 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
     }
 
-    // TOGGLE USER (open user picker)
+    // TOGGLE USER
     if (action === "toggle_user") {
       const picker = new UserSelectMenuBuilder()
         .setCustomId(IDS.ticketUserToggleSelect)
@@ -598,7 +741,7 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
-    // CLOSE: logs + transcript (.txt) to logs + DM + rating
+    // CLOSE
     if (action === "close") {
       await interaction.reply({ content: "Closing ticket… generating transcript.", ephemeral: true });
 
@@ -606,32 +749,39 @@ export async function handleDashboardInteractions(client, interaction) {
       const { openerId, ticketTypeValue } = getTicketInfoFromTopic(topic);
       const handlerId = getClaimedBy(topic) ?? "none";
 
-      let transcriptText = "";
+      // Build HTML transcript
+      let html = "";
       try {
-        transcriptText = await buildTranscript(channel);
-      } catch {
-        transcriptText = `Transcript failed to generate.\nChannel: #${channel?.name} (${channel?.id})`;
+        html = await buildTranscriptHtml(channel);
+      } catch (e) {
+        console.error("Transcript build failed:", e);
+        html = htmlWrapper({
+          title: `Ticket Transcript — #${channel.name}`,
+          subtitle: `Channel ID: ${channel.id}`,
+          bodyHtml: `<div class="meta"><div class="pill">Transcript failed to generate.</div></div>`
+        });
       }
 
-      const transcriptName = `ticket-${channel.id}.txt`;
-      const transcriptFile = {
-        attachment: Buffer.from(transcriptText, "utf8"),
-        name: transcriptName
-      };
+      const baseName = `ticket-${channel.id}.html`;
+      const transcriptFiles = splitHtmlFiles({ html, baseName });
 
-      // LOG: closed (component-based) + transcript attached
-      const closedLog = layoutMessage(
-        `## 🔴 **Ticket Closed**\n` +
-          `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
-          `> **Opener:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
-          `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-          `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
-          `> **Staff Role:** <@&${staffRoleId}>\n\n` +
-          `> **Transcript:** Attached below.`
-      );
-      await logTicket(client, conf, closedLog, [transcriptFile]);
+      // LOG: closed + transcript attachments
+      try {
+        const closedLog = layoutMessage(
+          `## 🔴 **Ticket Closed**\n` +
+            `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+            `> **Opener:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
+            `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
+            `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+            `> **Staff Role:** <@&${staffRoleId}>\n\n` +
+            `> **Transcript:** Attached (${transcriptFiles.length} file${transcriptFiles.length === 1 ? "" : "s"}).`
+        );
+        await logTicket(client, conf, closedLog, transcriptFiles);
+      } catch (e) {
+        console.error("Log ticket closed failed:", e);
+      }
 
-      // DM opener (component-based) + transcript + rating buttons
+      // DM opener: closed + transcript + rating buttons
       if (openerId) {
         try {
           const dmBody = layoutMessage(
@@ -648,14 +798,11 @@ export async function handleDashboardInteractions(client, interaction) {
           await postRawDM(
             client,
             openerId,
-            {
-              ...dmBody,
-              components: [...dmBody.components, row.toJSON()]
-            },
-            [transcriptFile]
+            { ...dmBody, components: [...dmBody.components, row.toJSON()] },
+            transcriptFiles
           );
-        } catch {
-          // DMs closed, ignore
+        } catch (e) {
+          console.error("DM transcript failed (user likely has DMs closed):", e);
         }
       }
 
