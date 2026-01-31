@@ -179,13 +179,7 @@ async function logTicketMessage(client, conf, body) {
   return postRaw(client, logId, body);
 }
 
-async function logTicketTranscript(client, conf, body, files) {
-  const logId = conf.ticketLogsChannelId;
-  if (!logId) return;
-  return postRaw(client, logId, body, files);
-}
-
-// ---------------- TRANSCRIPT (.txt for reliability) ----------------
+// ---------------- TRANSCRIPT (PLAIN TEXT MESSAGES) ----------------
 async function buildTranscriptTxt(channel, maxMessages = 4000) {
   const lines = [];
   lines.push(`Ticket Transcript`);
@@ -231,27 +225,66 @@ async function buildTranscriptTxt(channel, maxMessages = 4000) {
   return lines.join("\n");
 }
 
-// Split into multiple txt files under upload limit
-function splitTxtFiles(text, baseName) {
-  const MAX_BYTES = 7_500_000;
-  const buf = Buffer.from(text, "utf8");
-  if (buf.length <= MAX_BYTES) {
-    return [{ attachment: buf, name: baseName }];
-  }
+// Discord message limit is 2000 chars; keep headroom.
+function splitPlainTextMessages(text, chunkSize = 1800) {
+  const chunks = [];
+  const lines = String(text ?? "").split("\n");
 
-  const parts = [];
-  let offset = 0;
-  let idx = 1;
-  while (offset < buf.length) {
-    const chunk = buf.slice(offset, offset + MAX_BYTES);
-    parts.push({
-      attachment: chunk,
-      name: baseName.replace(".txt", `-part${idx}.txt`)
-    });
-    offset += MAX_BYTES;
-    idx++;
+  let cur = "";
+  for (const line of lines) {
+    // +1 for newline
+    if ((cur.length + line.length + 1) > chunkSize) {
+      if (cur) chunks.push(cur);
+      cur = line;
+    } else {
+      cur = cur ? (cur + "\n" + line) : line;
+    }
   }
-  return parts;
+  if (cur) chunks.push(cur);
+
+  // If there are any chunks still > chunkSize (very long single line), hard slice.
+  const finalChunks = [];
+  for (const c of chunks) {
+    if (c.length <= chunkSize) finalChunks.push(c);
+    else {
+      for (let i = 0; i < c.length; i += chunkSize) {
+        finalChunks.push(c.slice(i, i + chunkSize));
+      }
+    }
+  }
+  return finalChunks;
+}
+
+async function sendPlainTranscriptToChannel(client, channelId, ticketId, transcriptText) {
+  const chunks = splitPlainTextMessages(transcriptText, 1800);
+
+  // header
+  await postRaw(client, channelId, {
+    content: `**Transcript for ticket \`${ticketId}\`** (${chunks.length} message${chunks.length === 1 ? "" : "s"})`
+  });
+
+  // chunks
+  for (let i = 0; i < chunks.length; i++) {
+    await postRaw(client, channelId, {
+      content: "```txt\n" + chunks[i] + "\n```"
+    });
+  }
+}
+
+async function sendPlainTranscriptToDM(client, userId, ticketId, transcriptText) {
+  const chunks = splitPlainTextMessages(transcriptText, 1800);
+
+  // header
+  await postRawDM(client, userId, {
+    content: `**Your transcript for ticket \`${ticketId}\`** (${chunks.length} message${chunks.length === 1 ? "" : "s"})`
+  });
+
+  // chunks
+  for (let i = 0; i < chunks.length; i++) {
+    await postRawDM(client, userId, {
+      content: "```txt\n" + chunks[i] + "\n```"
+    });
+  }
 }
 
 // ---------------- BUILD TICKET OPEN MESSAGE ----------------
@@ -323,20 +356,44 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
     }
 
+    // ✅ If already rated (buttons disabled), block spam
+    const alreadyDisabled = interaction.message.components?.some((row) =>
+      row.components?.some((c) => c.customId?.startsWith(IDS.ratePrefix + ":") && c.disabled)
+    );
+
+    if (alreadyDisabled) {
+      return interaction.reply({ content: "You already rated this ticket.", ephemeral: true });
+    }
+
     try {
+      // LOG rating WITHOUT pinging handler (no <@handler>)
       const ratingLog = layoutMessage(
         `## ⭐ **Ticket Rated**\n` +
           `> **Ticket:** \`${ticketId}\`\n` +
           `> **Opener:** <@${openerId}>\n` +
-          `> **Handler:** ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+          `> **Handler ID:** ${handlerId && handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
           `> **Rating:** **${rating}/5**`
       );
       await logTicketMessage(client, conf, ratingLog);
 
-      const disabledRow = new ActionRowBuilder().addComponents(
-        interaction.message.components[0].components.map((b) => ButtonBuilder.from(b).setDisabled(true))
+      // ✅ Disable all rating buttons + change message to confirmation
+      const disabledRow = new ActionRowBuilder();
+      for (let i = 1; i <= 5; i++) {
+        disabledRow.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
+            .setLabel(String(i))
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true)
+        );
+      }
+
+      const confirm = layoutMessage(
+        `## ✅ **Rating submitted**\n` +
+          `> You rated this ticket **${rating}/5**.\n` +
+          `> Thanks for the feedback!`
       );
-      const confirm = layoutMessage(`## ✅ **Thank you!**\n> You rated this ticket **${rating}/5**.`);
+
       await interaction.update({
         content: "",
         components: [...confirm.components, disabledRow.toJSON()]
@@ -464,15 +521,13 @@ export async function handleDashboardInteractions(client, interaction) {
       })
     );
 
-    // log opened (message only, no file)
     try {
       const openedLog = layoutMessage(
         `## 🟢 **Ticket Opened**\n` +
           `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
           `> **Opener:** <@${interaction.user.id}>\n` +
           `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**\n` +
-          `> **Staff Role:** <@&${staffRoleId}>\n` +
-          `> **Enquiry:** ${enquiry.length > 250 ? enquiry.slice(0, 250) + "…" : enquiry}`
+          `> **Staff Role:** <@&${staffRoleId}>`
       );
       await logTicketMessage(client, conf, openedLog);
     } catch (e) {
@@ -502,7 +557,6 @@ export async function handleDashboardInteractions(client, interaction) {
     const targetId = interaction.values?.[0];
     if (!targetId) return interaction.reply({ content: "No user selected.", ephemeral: true });
 
-    // block adding/removing ANY staff
     const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
     const isStaff =
       (conf.supportRoleId && targetMember?.roles.cache.has(conf.supportRoleId)) ||
@@ -610,22 +664,22 @@ export async function handleDashboardInteractions(client, interaction) {
       const { openerId, ticketTypeValue } = getTicketInfoFromTopic(topic);
       const handlerId = getClaimedBy(topic) ?? "none";
 
-      // 1) Send "closed" log message first (NO FILE)
+      // Log: closed (component-based)
       try {
         const closedLog = layoutMessage(
           `## 🔴 **Ticket Closed**\n` +
             `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
             `> **Opener:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
             `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-            `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+            `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
             `> **Staff Role:** <@&${staffRoleId}>`
         );
         await logTicketMessage(client, conf, closedLog);
       } catch (e) {
-        console.error("Closed log message failed:", e);
+        console.error("Closed log failed:", e);
       }
 
-      // 2) Build transcript and send as separate message(s) with files
+      // Build transcript text
       let transcriptText = "";
       try {
         transcriptText = await buildTranscriptTxt(channel);
@@ -634,56 +688,45 @@ export async function handleDashboardInteractions(client, interaction) {
         transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
       }
 
-      const baseName = `ticket-${channel.id}.txt`;
-      const transcriptFiles = splitTxtFiles(transcriptText, baseName);
-
-      // Logs: transcript message (component-based) + files
+      // ✅ Send transcript as plain text messages (logs)
       try {
-        const transcriptLogMsg = layoutMessage(
-          `## 📄 **Transcript**\n` +
-            `> **Ticket:** \`${channel.id}\`\n` +
-            `> **Parts:** **${transcriptFiles.length}**`
-        );
-        await logTicketTranscript(client, conf, transcriptLogMsg, transcriptFiles);
+        await sendPlainTranscriptToChannel(client, conf.ticketLogsChannelId, channel.id, transcriptText);
       } catch (e) {
-        console.error("Transcript upload to logs failed:", e);
+        console.error("Transcript send to logs failed:", e);
       }
 
-      // DM opener: closed message + transcript message + rating
+      // DM opener: closed message (component) + transcript plain text + rating (component)
       if (openerId) {
-        // Closed DM message (no file)
+        // Closed DM (component)
         try {
           const closedDm = layoutMessage(
             `## ✅ **Your ticket has been closed**\n` +
               `> **Ticket ID:** \`${channel.id}\`\n` +
               `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-              `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "Unclaimed"}`
+              `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}`
           );
           await postRawDM(client, openerId, closedDm);
         } catch (e) {
           console.error("DM closed message failed:", e);
         }
 
-        // Transcript DM message (with files) + rating row
+        // Transcript plain text DM
         try {
-          const transcriptDm = layoutMessage(
-            `## 📄 **Your Transcript**\n` +
-              `> **Ticket:** \`${channel.id}\`\n` +
-              `> **Parts:** **${transcriptFiles.length}**\n\n` +
-              `### ⭐ **Rate your experience (optional)**\n` +
-              `> Click a number below (1–5).`
-          );
-
-          const row = ratingRow(channel.id, openerId, handlerId);
-
-          await postRawDM(
-            client,
-            openerId,
-            { ...transcriptDm, components: [...transcriptDm.components, row.toJSON()] },
-            transcriptFiles
-          );
+          await sendPlainTranscriptToDM(client, openerId, channel.id, transcriptText);
         } catch (e) {
           console.error("DM transcript failed:", e);
+        }
+
+        // Rating DM (component + buttons) — separate message, so transcript stays plain text
+        try {
+          const rateMsg = layoutMessage(
+            `## ⭐ **Rate your experience (optional)**\n` +
+              `> Click a number below (1–5).`
+          );
+          const row = ratingRow(channel.id, openerId, handlerId);
+          await postRawDM(client, openerId, { ...rateMsg, components: [...rateMsg.components, row.toJSON()] });
+        } catch (e) {
+          console.error("DM rating message failed:", e);
         }
       }
 
