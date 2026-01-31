@@ -21,6 +21,8 @@
 
   "orderChannelNameFormat": "order-{username}",
   "orderLogsChannelId": "1467239248724754472"
+
+  "reviewChannelId": "1467248480249450580"
 },
   
   "welcome": {
