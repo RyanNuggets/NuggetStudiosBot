@@ -378,13 +378,15 @@ export async function handleDashboardInteractions(client, interaction) {
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
     const selected = interaction.values?.[0];
 
-    // Studio Regulations (EPHEMERAL + safe ack)
+    // Studio Regulations (EPHEMERAL + fixed: editReply only takes {components/...}, not flags)
     if (selected === "regulations") {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
-      return interaction.editReply(STUDIO_REGULATIONS_PAYLOAD).catch(() => {});
+      return interaction
+        .editReply({ components: STUDIO_REGULATIONS_PAYLOAD.components })
+        .catch(() => {});
     }
 
-    // Support (normal ephemeral)
+    // Support
     if (selected === "support") {
       const select = new StringSelectMenuBuilder()
         .setCustomId(IDS.ticketTypeSelect)
