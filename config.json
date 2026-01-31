@@ -8,5 +8,6 @@
     "supportRoleId": "1467054430212984832",
 
     "ticketChannelNameFormat": "ticket-{username}"
+    "ticketLogsChannelId": "1467066668814696531"
   }
 }
