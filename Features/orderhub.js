@@ -197,7 +197,7 @@ async function logOrderMessage(client, ohConf, body) {
   return postRaw(client, logId, body);
 }
 
-// ---------------- COMPONENT-BASED LAYOUT HELPERS ----------------
+// ---------------- COMPONENT-BASED LAYOUT HELPERS (logs/DM) ----------------
 function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   const components = [];
   if (pingLine) components.push({ type: 10, content: pingLine });
@@ -401,9 +401,9 @@ function buildClosePromptPayload(openerId) {
             type: 10,
             content:
               "## Your order has now been completed!\n" +
-              "If you’re happy with the final result, we’d really appreciate you taking a moment to leave a review, " +
-              "your feedback helps us improve and supports Nugget Studios. If you’d prefer not to leave a review, " +
-              "feel free to select “Close without Review.”"
+              "If you’re happy with the final result, we’d really appreciate you taking a moment to leave a review — " +
+              "your feedback helps us improve and supports Nugget Studios.\n" +
+              "If you’d prefer not to leave a review, select **Close without Review**."
           },
           { type: 14, spacing: 2 },
           {
@@ -445,11 +445,11 @@ function buildRatingSelectEphemeral() {
           .setCustomId(IDS.reviewRatingSelect)
           .setPlaceholder("Choose 1–5…")
           .addOptions([
-            { label: "1", value: "1", emoji: { name: "⭐" } },
-            { label: "2", value: "2", emoji: { name: "⭐" } },
-            { label: "3", value: "3", emoji: { name: "⭐" } },
-            { label: "4", value: "4", emoji: { name: "⭐" } },
-            { label: "5", value: "5", emoji: { name: "⭐" } }
+            { label: "1", value: "1" },
+            { label: "2", value: "2" },
+            { label: "3", value: "3" },
+            { label: "4", value: "4" },
+            { label: "5", value: "5" }
           ])
       )
     ],
@@ -475,37 +475,28 @@ function buildProductSelectEphemeral() {
   };
 }
 
-// Component-based “review embed” (same style as your other messages)
-function buildReviewComponentMessage({ userId, designerId, rating, product, message, orderChannelId }) {
+// CLEANER review embed (normal embeds w/ fields, like your example)
+function buildCleanReviewEmbed({ userId, designerId, rating, product, message }) {
   const stars = Array.from({ length: Number(rating) }, () => STAR_EMOJI).join("");
 
   const safeMsg = String(message ?? "").trim() || "No message provided.";
-  const quoted = safeMsg.replace(/\r/g, "").split("\n").map((l) => `> ${l}`).join("\n");
-
-  const content =
-    `## **New Order Review**\n` +
-    `> **Customer:** <@${userId}>\n` +
-    `> **Designer:** <@${designerId}>\n` +
-    `> **Rating:** ${stars}  \`(${rating}/5)\`\n` +
-    `> **Product:** **${product}**\n` +
-    `> **Order Ticket:** <#${orderChannelId}>\n\n` +
-    `### **Message**\n` +
-    `${quoted}`;
+  const clipped = safeMsg.length > 900 ? safeMsg.slice(0, 900) + "…" : safeMsg;
 
   return {
-    flags: 32768,
     allowed_mentions: { parse: ["users"] },
-    components: [
+    embeds: [
+      { image: { url: BRAND_IMAGE } },
       {
-        type: 17,
-        components: [
-          { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
-          { type: 14, spacing: 2 },
-          { type: 10, content },
-          { type: 14, spacing: 2 }
+        description: `## New Order Review\n> - Review left by <@${userId}>.`,
+        fields: [
+          { name: "Designer:", value: `<@${designerId}>`, inline: true },
+          { name: "Rating:", value: stars || "—", inline: true },
+          { name: "Product:", value: `**${product}**`, inline: true },
+          { name: "Feedback:", value: clipped, inline: false }
         ]
       }
-    ]
+    ],
+    components: []
   };
 }
 
@@ -520,9 +511,15 @@ async function closeOrderNow(client, interaction, channel, oh) {
 
   const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
   const payTypeLabel =
-    payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : payType === "robux" ? "Robux" : "Unknown";
+    payType === "paypal"
+      ? "PayPal"
+      : payType === "card"
+      ? "Credit/Debit Card"
+      : payType === "robux"
+      ? "Robux"
+      : "Unknown";
 
-  // Log: closed (component-based)
+  // Log: closed
   try {
     const closedLog = layoutMessage(
       `## 🔴 **Order Closed**\n` +
@@ -582,14 +579,12 @@ async function closeOrderNow(client, interaction, channel, oh) {
     channel.delete("Order closed").catch(() => {});
   }, 2500);
 
-  // If we still can respond to interaction, do it
+  // Try to acknowledge
   try {
     if (interaction?.isRepliable?.()) {
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ content: "✅ Order closed.", ephemeral: true }).catch(() => {});
-      } else {
-        await interaction.reply({ content: "✅ Order closed.", ephemeral: true }).catch(() => {});
-      }
+      const payload = { content: "✅ Order closed.", ephemeral: true };
+      if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => {});
+      else await interaction.reply(payload).catch(() => {});
     }
   } catch {}
 }
@@ -941,11 +936,11 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     const input = new TextInputBuilder()
       .setCustomId(IDS.reviewModalInput)
-      .setLabel("Your message")
+      .setLabel("Your feedback")
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(true)
       .setMinLength(5)
-      .setMaxLength(800);
+      .setMaxLength(900);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     return interaction.showModal(modal);
@@ -967,25 +962,26 @@ export async function handleOrderHubInteractions(client, interaction) {
       return interaction.reply({ content: "Missing **orderhub.reviewChannelId** in config.json", ephemeral: true });
     }
 
-    const msg = interaction.fields.getTextInputValue(IDS.reviewModalInput);
+    const feedback = interaction.fields.getTextInputValue(IDS.reviewModalInput);
 
-    // send review (component-based message, with <:star:...> stars)
+    // send review
     await postRaw(
       client,
       oh.reviewChannelId,
-      buildReviewComponentMessage({
+      buildCleanReviewEmbed({
         userId: interaction.user.id,
         designerId: state.designerId,
         rating: state.rating,
         product: state.product,
-        message: msg,
-        orderChannelId: channel.id
+        message: feedback
       })
     ).catch((e) => console.error("[ORDERHUB] review post failed:", e));
 
     REVIEW_STATE.delete(key);
 
-    await interaction.reply({ content: "✅ Thanks! Your review has been submitted. Closing the order…", ephemeral: true }).catch(() => {});
+    await interaction
+      .reply({ content: "✅ Review submitted. Closing the order…", ephemeral: true })
+      .catch(() => {});
 
     // close order after review (transcript + logs + DM + delete)
     return closeOrderNow(client, interaction, channel, oh);
