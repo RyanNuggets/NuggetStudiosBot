@@ -60,6 +60,9 @@ const TICKET_TYPES = [
   { label: "Billing", value: "billing" }
 ];
 
+const ticketTypeLabel = (value) =>
+  TICKET_TYPES.find((t) => t.value === value)?.label ?? value;
+
 // ---------------- IDS ----------------
 const IDS = {
   mainSelect: "dashboard_main_select",
@@ -70,8 +73,6 @@ const IDS = {
 };
 
 // ---------------- HELPERS ----------------
-const shortId = () => Math.random().toString(36).slice(2, 8);
-
 const safeChannelName = (name) =>
   name
     .toLowerCase()
@@ -79,8 +80,18 @@ const safeChannelName = (name) =>
     .replace(/-+/g, "-")
     .slice(0, 90);
 
+const isSupport = (interaction, supportRoleId) => {
+  const member = interaction.member;
+  if (!member) return false;
+  // member.roles can be a cache or array depending on partials; handle both
+  const roles = member.roles?.cache ?? member.roles;
+  return roles?.has ? roles.has(supportRoleId) : Array.isArray(roles) ? roles.includes(supportRoleId) : false;
+};
+
 // ---------------- BUILD TICKET MESSAGE ----------------
-function buildTicketOpenPayload({ userId, supportRoleId, ticketType, enquiry }) {
+function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquiry }) {
+  const typeLabel = ticketTypeLabel(ticketTypeValue);
+
   return {
     flags: 32768,
     allowed_mentions: { parse: ["users", "roles"] },
@@ -106,12 +117,12 @@ function buildTicketOpenPayload({ userId, supportRoleId, ticketType, enquiry }) 
           {
             type: 10,
             content:
-              `# **Thank you for contacting Nugget Studios.**\n` +
-              `> Your request has been received and is now in our queue.\n\n` +
-              `## **Ticket Information:**\n` +
-              `> **User:** <@${userId}>\n` +
-              `> **Ticket Type:** ${ticketType}\n\n` +
-              `## **Enquiry:**\n` +
+              `## **Thank you for contacting Nugget Studios.**\n` +
+              `> Thanks for reaching out to Nugget Studios. Your request has been received and is now in our queue. Please share all relevant details so we can assist you efficiently. While we review your ticket, we ask that you do not tag or message staff directly.\n\n` +
+              `# **Ticket Information:**\n` +
+              `> `**User:**` <@${userId}>\n` +
+              `> `**Ticket Type:**` ${typeLabel}\n\n` +
+              `# `**Enquiry:**`\n` +
               `> *${enquiry}*`
           },
           { type: 14, spacing: 2 },
@@ -174,18 +185,22 @@ export async function handleDashboardInteractions(client, interaction) {
       .setCustomId(IDS.modalInput)
       .setLabel("Describe your issue")
       .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true);
+      .setRequired(true)
+      .setMinLength(10)
+      .setMaxLength(1000);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
     return interaction.showModal(modal);
   }
 
   // Modal submit → create ticket
-  if (interaction.isModalSubmit() && interaction.customId.startsWith(IDS.modalBase)) {
-    const ticketType = interaction.customId.split(":")[1];
+  if (interaction.isModalSubmit() && interaction.customId.startsWith(IDS.modalBase + ":")) {
+    const ticketTypeValue = interaction.customId.split(":")[1];
     const enquiry = interaction.fields.getTextInputValue(IDS.modalInput);
 
     const guild = interaction.guild;
+    if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
+
     const channelName = safeChannelName(
       conf.ticketChannelNameFormat.replace("{username}", interaction.user.username)
     );
@@ -198,11 +213,22 @@ export async function handleDashboardInteractions(client, interaction) {
         { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
           id: interaction.user.id,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.AttachFiles,
+            PermissionFlagsBits.EmbedLinks
+          ]
         },
         {
           id: conf.supportRoleId,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.ManageMessages
+          ]
         }
       ]
     });
@@ -211,7 +237,7 @@ export async function handleDashboardInteractions(client, interaction) {
       body: buildTicketOpenPayload({
         userId: interaction.user.id,
         supportRoleId: conf.supportRoleId,
-        ticketType,
+        ticketTypeValue,
         enquiry
       })
     });
@@ -226,26 +252,73 @@ export async function handleDashboardInteractions(client, interaction) {
   if (interaction.isStringSelectMenu() && interaction.customId === IDS.ticketActionsSelect) {
     const action = interaction.values[0];
 
-    // CLAIM
-    if (action === "claim") {
-      const claimMessage =
-        `Hello! My name is <@${interaction.user.id}> and I’ll be assisting you with this ticket.`;
+    // Only support can use this menu
+    if (!isSupport(interaction, conf.supportRoleId)) {
+      return interaction.reply({
+        content: "Only the support team can use ticket actions.",
+        ephemeral: true
+      });
+    }
 
-      await interaction.message.reply({
+    // Ticket can only be claimed once:
+    // We'll "lock" the menu by editing the message components after claim.
+    // If it's already been claimed, the menu placeholder will be changed to "Claimed by ..."
+    const msg = interaction.message;
+    const alreadyClaimed =
+      msg?.components?.some((row) =>
+        row.components?.some(
+          (c) =>
+            c.type === 3 &&
+            c.customId === IDS.ticketActionsSelect &&
+            (c.placeholder?.toLowerCase()?.includes("claimed") || c.disabled === true)
+        )
+      ) ?? false;
+
+    if (action === "claim") {
+      if (alreadyClaimed) {
+        return interaction.reply({ content: "This ticket has already been claimed.", ephemeral: true });
+      }
+
+      const claimMessage = `Hello! My name is <@${interaction.user.id}> and I’ll be assisting you with this ticket.`;
+
+      // Reply to the embed message
+      await msg.reply({
         content: claimMessage,
         allowedMentions: { parse: ["users"] }
       });
 
+      // Disable the actions menu so it can't be claimed again
+      // (Also prevents close being used by multiple people if you want it locked; but support can still close via other means later.)
+      try {
+        const newComponents = msg.components.map((row) => {
+          const rowJson = row.toJSON();
+          rowJson.components = rowJson.components.map((c) => {
+            if (c.type === 3 && c.custom_id === IDS.ticketActionsSelect) {
+              return {
+                ...c,
+                disabled: true,
+                placeholder: `Claimed by ${interaction.user.username}`
+              };
+            }
+            return c;
+          });
+          return rowJson;
+        });
+
+        await msg.edit({ components: newComponents });
+      } catch {
+        // ignore if we can't edit
+      }
+
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
     }
 
-    // CLOSE
     if (action === "close") {
-      await interaction.reply({ content: "Closing ticket…", ephemeral: true });
-
-      setTimeout(() => {
-        interaction.channel.delete("Ticket closed").catch(() => {});
-      }, 3_000);
+      return interaction.reply({ content: "Closing ticket…", ephemeral: true }).then(() => {
+        setTimeout(() => {
+          interaction.channel?.delete("Ticket closed").catch(() => {});
+        }, 3_000);
+      });
     }
   }
 }
