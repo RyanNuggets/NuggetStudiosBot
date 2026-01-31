@@ -7,7 +7,9 @@ import {
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
-  UserSelectMenuBuilder
+  UserSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } from "discord.js";
 import fs from "fs";
 
@@ -71,7 +73,10 @@ const IDS = {
   modalBase: "support_enquiry_modal",
   modalInput: "support_enquiry_input",
   ticketActionsSelect: "ticket_actions_select",
-  ticketUserToggleSelect: "ticket_user_toggle_select"
+  ticketUserToggleSelect: "ticket_user_toggle_select",
+
+  // Rating in DMs (buttons)
+  ratePrefix: "ticket_rate" // customId: ticket_rate:<ticketId>:<openerId>:<handlerId>:<rating>
 };
 
 // ---------------- HELPERS ----------------
@@ -92,7 +97,7 @@ const isSupport = (interaction, supportRoleId) => {
 // Hidden tag stored in channel topic to prevent duplicates per type
 const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
 
-// ✅ Claim tag stored in channel topic (reliable)
+// Claim tag stored in channel topic (reliable)
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
 const hasClaimTag = (topic = "") => topic.includes("ns_claimed:");
 const getClaimedBy = (topic = "") => {
@@ -100,10 +105,91 @@ const getClaimedBy = (topic = "") => {
   return m ? m[1] : null;
 };
 
+// Parse opener + ticket type from topic
+const getTicketInfoFromTopic = (topic = "") => {
+  const m = topic.match(/ns_ticket:(\d{5,}):([a-z0-9_-]+)/i);
+  if (!m) return { openerId: null, ticketTypeValue: null };
+  return { openerId: m[1], ticketTypeValue: m[2] };
+};
+
 const appendTopicTag = (topic = "", tag = "") => {
   const next = (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
   return next;
 };
+
+// Log helper (sends to log channel if configured)
+async function logTicket(client, conf, payload) {
+  const logChannelId = conf.ticketLogsChannelId;
+  if (!logChannelId) return;
+  try {
+    await client.rest.post(Routes.channelMessages(logChannelId), { body: payload });
+  } catch {
+    // ignore logging failures so tickets still work
+  }
+}
+
+// Fetch messages and create transcript string
+async function buildTranscript(channel, maxMessages = 2000) {
+  const lines = [];
+  lines.push(`Ticket Transcript`);
+  lines.push(`Channel: #${channel.name} (${channel.id})`);
+  lines.push(`Created: ${new Date(channel.createdTimestamp).toISOString()}`);
+  lines.push(`Topic: ${channel.topic ?? ""}`);
+  lines.push(`----------------------------------------\n`);
+
+  // Fetch in pages of 100 (oldest -> newest after reverse at end)
+  let lastId = undefined;
+  const collected = [];
+
+  while (collected.length < maxMessages) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+    if (!batch || batch.size === 0) break;
+
+    collected.push(...batch.values());
+    lastId = batch.last().id;
+
+    if (batch.size < 100) break;
+  }
+
+  // Oldest -> newest
+  collected.reverse();
+
+  for (const msg of collected) {
+    const ts = new Date(msg.createdTimestamp).toISOString();
+    const author = `${msg.author?.tag ?? "Unknown"} (${msg.author?.id ?? "?"})`;
+    const content = (msg.content ?? "").replace(/\r/g, "");
+
+    lines.push(`[${ts}] ${author}`);
+    if (content) lines.push(content);
+
+    if (msg.attachments?.size) {
+      for (const att of msg.attachments.values()) {
+        lines.push(`(attachment) ${att.name ?? "file"} - ${att.url}`);
+      }
+    }
+
+    if (msg.embeds?.length) {
+      lines.push(`(embeds) ${msg.embeds.length} embed(s)`);
+    }
+
+    lines.push(""); // blank line between messages
+  }
+
+  return lines.join("\n");
+}
+
+function ratingButtons(ticketId, openerId, handlerId) {
+  const row = new ActionRowBuilder();
+  for (let i = 1; i <= 5; i++) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
+        .setLabel(String(i))
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+  return row;
+}
 
 // ---------------- BUILD TICKET MESSAGE ----------------
 function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquiry }) {
@@ -178,6 +264,43 @@ export async function sendDashboard(client) {
 // ---------------- INTERACTION HANDLER ----------------
 export async function handleDashboardInteractions(client, interaction) {
   const { dashboard: conf } = readConfig();
+
+  // ---------------- Rating buttons (DM) ----------------
+  if (interaction.isButton && interaction.isButton() && interaction.customId.startsWith(IDS.ratePrefix + ":")) {
+    const parts = interaction.customId.split(":");
+    const ticketId = parts[1];
+    const openerId = parts[2];
+    const handlerId = parts[3];
+    const rating = parts[4];
+
+    // Only the ticket opener can rate
+    if (interaction.user.id !== openerId) {
+      return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
+    }
+
+    // Log rating
+    await logTicket(client, conf, {
+      content:
+        `⭐ **Ticket Rated**\n` +
+        `• Ticket: \`${ticketId}\`\n` +
+        `• Opener: <@${openerId}>\n` +
+        `• Handler: ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+        `• Rating: **${rating}/5**`
+    });
+
+    // Disable buttons after rating
+    try {
+      const disabledRow = new ActionRowBuilder().addComponents(
+        interaction.message.components[0].components.map((b) => ButtonBuilder.from(b).setDisabled(true))
+      );
+      await interaction.update({ content: `Thanks! You rated this ticket **${rating}/5**.`, components: [disabledRow] });
+    } catch {
+      // fallback
+      return interaction.reply({ content: `Thanks! You rated this ticket **${rating}/5**.`, ephemeral: true });
+    }
+
+    return;
+  }
 
   // Dashboard select
   if (interaction.isStringSelectMenu() && interaction.customId === IDS.mainSelect) {
@@ -281,6 +404,16 @@ export async function handleDashboardInteractions(client, interaction) {
       })
     });
 
+    // ✅ Log opened
+    await logTicket(client, conf, {
+      content:
+        `🟢 **Ticket Opened**\n` +
+        `• Ticket: <#${channel.id}> (\`${channel.id}\`)\n` +
+        `• Opener: <@${interaction.user.id}>\n` +
+        `• Type: **${ticketTypeLabel(ticketTypeValue)}**\n` +
+        `• Enquiry: ${enquiry.length > 200 ? enquiry.slice(0, 200) + "…" : enquiry}`
+    });
+
     return interaction.reply({
       content: `You have successfully created a ticket. View your ticket ⁠<#${channel.id}>.`,
       ephemeral: true
@@ -288,7 +421,11 @@ export async function handleDashboardInteractions(client, interaction) {
   }
 
   // ---------------- ADD/REMOVE USER picker submit ----------------
-  if (interaction.isUserSelectMenu && interaction.isUserSelectMenu() && interaction.customId === IDS.ticketUserToggleSelect) {
+  if (
+    interaction.isUserSelectMenu &&
+    interaction.isUserSelectMenu() &&
+    interaction.customId === IDS.ticketUserToggleSelect
+  ) {
     // only support can use
     if (!isSupport(interaction, conf.supportRoleId)) {
       return interaction.reply({
@@ -303,7 +440,7 @@ export async function handleDashboardInteractions(client, interaction) {
     const targetId = interaction.values?.[0];
     if (!targetId) return interaction.reply({ content: "No user selected.", ephemeral: true });
 
-    // ✅ prevent staff adding/removing staff
+    // prevent staff adding/removing staff
     const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
     if (targetMember && targetMember.roles.cache.has(conf.supportRoleId)) {
       return interaction.reply({
@@ -350,15 +487,13 @@ export async function handleDashboardInteractions(client, interaction) {
     const channel = interaction.channel;
     const msg = interaction.message;
 
-    // ✅ CLAIM (only one person total, enforced by channel topic tag)
+    // CLAIM (only one person total, enforced by channel topic tag)
     if (action === "claim") {
       const topic = channel?.topic ?? "";
       if (hasClaimTag(topic)) {
         const claimedBy = getClaimedBy(topic);
         return interaction.reply({
-          content: claimedBy
-            ? `This ticket is already claimed by <@${claimedBy}>.`
-            : "This ticket has already been claimed.",
+          content: claimedBy ? `This ticket is already claimed by <@${claimedBy}>.` : "This ticket has already been claimed.",
           ephemeral: true
         });
       }
@@ -370,13 +505,21 @@ export async function handleDashboardInteractions(client, interaction) {
         allowedMentions: { parse: ["users"] }
       });
 
-      // store claim in channel topic (reliable)
+      // store claim in channel topic
       try {
         const nextTopic = appendTopicTag(topic, claimedTopicTag(interaction.user.id));
         await channel.setTopic(nextTopic);
       } catch {
-        // ignore if can't set topic
+        // ignore
       }
+
+      // Log claimed
+      await logTicket(client, conf, {
+        content:
+          `🟡 **Ticket Claimed**\n` +
+          `• Ticket: <#${channel.id}> (\`${channel.id}\`)\n` +
+          `• Claimed By: <@${interaction.user.id}>`
+      });
 
       // Optional: update placeholder visually (not relied on)
       try {
@@ -398,13 +541,65 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
     }
 
-    // CLOSE
+    // CLOSE (log + transcript + DM + rating)
     if (action === "close") {
-      return interaction.reply({ content: "Closing ticket…", ephemeral: true }).then(() => {
-        setTimeout(() => {
-          interaction.channel?.delete("Ticket closed").catch(() => {});
-        }, 3_000);
+      await interaction.reply({ content: "Closing ticket… generating transcript.", ephemeral: true });
+
+      const topic = channel?.topic ?? "";
+      const { openerId, ticketTypeValue } = getTicketInfoFromTopic(topic);
+      const handlerId = getClaimedBy(topic) ?? "none";
+
+      // Build transcript
+      let transcriptText = "";
+      try {
+        transcriptText = await buildTranscript(channel);
+      } catch {
+        transcriptText = `Transcript failed to generate.\nChannel: #${channel?.name} (${channel?.id})`;
+      }
+
+      const transcriptName = `ticket-${channel.id}.txt`;
+      const transcriptFile = {
+        attachment: Buffer.from(transcriptText, "utf8"),
+        name: transcriptName
+      };
+
+      // Log closed + attach transcript
+      await logTicket(client, conf, {
+        content:
+          `🔴 **Ticket Closed**\n` +
+          `• Ticket: \`${channel.id}\`\n` +
+          `• Opener: ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
+          `• Type: **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
+          `• Handler: ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}`,
+        files: [transcriptFile]
       });
+
+      // DM opener with transcript + rating
+      if (openerId) {
+        try {
+          const openerUser = await client.users.fetch(openerId);
+          const row = ratingButtons(channel.id, openerId, handlerId);
+
+          await openerUser.send({
+            content:
+              `✅ Your ticket has been closed.\n` +
+              `Ticket ID: \`${channel.id}\`\n` +
+              `Handler: ${handlerId !== "none" ? `<@${handlerId}>` : "Unclaimed"}\n\n` +
+              `If you’d like, rate your support experience (1–5):`,
+            files: [transcriptFile],
+            components: [row]
+          });
+        } catch {
+          // If DMs are closed, we just skip DM
+        }
+      }
+
+      // Delete channel shortly after
+      setTimeout(() => {
+        interaction.channel?.delete("Ticket closed").catch(() => {});
+      }, 2500);
+
+      return;
     }
 
     // ADD/REMOVE USER (opens user picker)
