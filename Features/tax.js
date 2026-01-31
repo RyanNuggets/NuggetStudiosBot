@@ -1,29 +1,17 @@
 // /Features/tax.js
 import { Routes } from "discord-api-types/v10";
 import { ApplicationCommandOptionType } from "discord.js";
-import fs from "fs";
-
-// ---------------- CONFIG ----------------
-const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
-
-const PREFIX_DEFAULT = "-";
 
 // ---------------- HELPERS ----------------
 function parseAmount(input) {
   const s = String(input ?? "").trim().replace(/,/g, "");
   if (!s) return null;
 
-  // allow "100", "100.5" (we'll round)
   const n = Number(s);
-  if (!Number.isFinite(n)) return null;
-  if (n <= 0) return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
 
-  // robux should be integer
+  // Robux should be an integer
   return Math.round(n);
-}
-
-function fmt(n) {
-  return Number(n).toLocaleString("en-US");
 }
 
 function buildTaxEmbed(amount) {
@@ -33,44 +21,21 @@ function buildTaxEmbed(amount) {
   return {
     embeds: [
       {
-        fields: [
-          {
-            name: "Amount:",
-            value: `> ${fmt(amount)}`,
-            inline: true
-          },
-          {
-            name: "Robux Before Tax:",
-            value: `> ${fmt(beforeTax)}`,
-            inline: true
-          },
-          {
-            name: "Robux After Tax",
-            value: `> ${fmt(afterTax)}`,
-            inline: true
-          },
-          {
-            name: "",
-            value: ""
-          }
-        ]
+        description:
+          `**Amount:**\n` +
+          `> ${amount.toLocaleString("en-US")}\n\n` +
+          `**Robux Before Tax:**\n` +
+          `> ${beforeTax.toLocaleString("en-US")}\n\n` +
+          `**Robux After Tax:**\n` +
+          `> ${afterTax.toLocaleString("en-US")}\n`
       }
     ],
     components: []
   };
 }
 
-// ---------------- SLASH COMMAND REGISTRATION ----------------
-async function registerSlashTax(client) {
-  const conf = readConfig();
-
-  // needs guildId in config.json (top-level)
-  const guildId = conf.guildId;
-  if (!guildId) {
-    console.warn("⚠️ [TAX] Missing `guildId` in config.json (top-level). Slash command not registered.");
-    return;
-  }
-
+// ---------------- SLASH COMMAND REGISTRATION (OPTION A: GLOBAL) ----------------
+async function registerSlashTaxGlobal(client) {
   const appId = client.application?.id;
   if (!appId) {
     console.warn("⚠️ [TAX] Missing application id. Slash command not registered.");
@@ -92,14 +57,12 @@ async function registerSlashTax(client) {
   };
 
   try {
-    // Upsert as a single guild command (fast to appear)
-    await client.rest.put(Routes.applicationGuildCommands(appId, guildId), {
-      body: [command]
-    });
-
-    console.log("✅ [TAX] Slash command registered: /tax");
+    // ✅ Global commands (won't get overwritten by other modules)
+    // NOTE: Global commands can take a bit to appear in Discord.
+    await client.rest.post(Routes.applicationCommands(appId), { body: command });
+    console.log("✅ [TAX] Global slash command upserted: /tax");
   } catch (err) {
-    console.error("❌ [TAX] Failed to register slash command:", err);
+    console.error("❌ [TAX] Failed to register global slash command:", err);
   }
 }
 
@@ -120,11 +83,8 @@ async function handleTaxSlash(interaction) {
   return true;
 }
 
-async function handleTaxPrefix(message) {
+async function handleTaxPrefix(message, prefix = "-") {
   if (!message || message.author?.bot) return false;
-
-  const conf = readConfig();
-  const prefix = conf?.commands?.prefix ?? PREFIX_DEFAULT;
 
   const content = String(message.content ?? "").trim();
   if (!content.toLowerCase().startsWith(`${prefix}tax`)) return false;
@@ -141,12 +101,12 @@ async function handleTaxPrefix(message) {
   return true;
 }
 
-// ---------------- EXPORT (REGISTER MODULE) ----------------
-export default function registerTaxModule(client) {
+// ---------------- EXPORT ----------------
+export default function registerTaxModule(client, { prefix = "-" } = {}) {
   // register slash on ready
   client.once("ready", async () => {
     try {
-      await registerSlashTax(client);
+      await registerSlashTaxGlobal(client);
     } catch (e) {
       console.error("❌ [TAX] register error:", e);
     }
@@ -169,7 +129,7 @@ export default function registerTaxModule(client) {
   // listen for prefix commands
   client.on("messageCreate", async (message) => {
     try {
-      await handleTaxPrefix(message);
+      await handleTaxPrefix(message, prefix);
     } catch (e) {
       console.error("❌ [TAX] message error:", e);
     }
