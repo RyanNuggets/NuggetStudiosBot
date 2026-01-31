@@ -14,6 +14,54 @@ import fs from "fs";
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
+// ---------------- STUDIO REGULATIONS PAYLOAD ----------------
+const STUDIO_REGULATIONS_PAYLOAD = {
+  flags: 32768,
+  components: [
+    {
+      type: 17,
+      components: [
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
+              }
+            }
+          ]
+        },
+        { type: 14, spacing: 2 },
+        {
+          type: 10,
+          content:
+            "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
+            "1. **`Respect All Members`**\n" +
+            "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
+            "2. **`Spam & Flooding`**\n" +
+            "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
+            "3. **`Proper Channel Usage`**\n" +
+            "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
+            "4. **`Advertising & Promotion`**\n" +
+            "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
+            "5. **`Roblox & Discord Terms of Service`**\n" +
+            "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
+            "6. **`Leaking & Reselling`**\n" +
+            "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
+            "7. **`Staff Authority`**\n" +
+            "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
+            "8. **`Usernames & Avatars`**\n" +
+            "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
+            "9. **`NSFW & Inappropriate Content`**\n" +
+            "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
+            "10. **`Reporting Issues`**\n" +
+            "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
+        }
+      ]
+    }
+  ]
+};
+
 // ---------------- DASHBOARD LAYOUT ----------------
 const DASHBOARD_LAYOUT = {
   flags: 32768,
@@ -45,7 +93,10 @@ const DASHBOARD_LAYOUT = {
               type: 3,
               custom_id: "dashboard_main_select",
               placeholder: "Select an option…",
-              options: [{ label: "Support", value: "support" }]
+              options: [
+                { label: "Support", value: "support" },
+                { label: "Studio Regulations", value: "regulations" }
+              ]
             }
           ]
         }
@@ -85,11 +136,16 @@ const hasRole = (interaction, roleId) => {
   const member = interaction.member;
   if (!member || !roleId) return false;
   const roles = member.roles?.cache ?? member.roles;
-  return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
+  return roles?.has
+    ? roles.has(roleId)
+    : Array.isArray(roles)
+    ? roles.includes(roleId)
+    : false;
 };
 
 // Topic tags
-const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
+const ticketTopicTag = (userId, ticketTypeValue) =>
+  `ns_ticket:${userId}:${ticketTypeValue}`;
 const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
 
@@ -110,7 +166,8 @@ const getStaffRoleFromTopic = (topic = "") => {
   return m ? m[1] : null;
 };
 
-const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
+const appendTopicTag = (topic = "", tag = "") =>
+  (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
 // ---------------- COMPONENT-BASED LAYOUT ----------------
 const BRAND_IMAGE =
@@ -325,16 +382,28 @@ export async function handleDashboardInteractions(client, interaction) {
 
   // Dashboard select
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(IDS.ticketTypeSelect)
-      .setPlaceholder("Choose ticket type…")
-      .addOptions(TICKET_TYPES);
+    const selected = interaction.values?.[0];
 
-    return interaction.reply({
-      content: "Select a ticket type:",
-      components: [new ActionRowBuilder().addComponents(select)],
-      ephemeral: true
-    });
+    // NEW: Studio Regulations option
+    if (selected === "regulations") {
+      await interaction.deferUpdate().catch(() => {});
+      await postRaw(client, interaction.channelId, STUDIO_REGULATIONS_PAYLOAD);
+      return;
+    }
+
+    // Existing: Support option
+    if (selected === "support") {
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(IDS.ticketTypeSelect)
+        .setPlaceholder("Choose ticket type…")
+        .addOptions(TICKET_TYPES);
+
+      return interaction.reply({
+        content: "Select a ticket type:",
+        components: [new ActionRowBuilder().addComponents(select)],
+        ephemeral: true
+      });
+    }
   }
 
   // Ticket type → modal
@@ -615,7 +684,7 @@ export async function handleDashboardInteractions(client, interaction) {
         console.error("Transcript send to logs failed:", e);
       }
 
-      // DM opener: CLOSED ONLY (no rating), then transcript plain
+      // DM opener: CLOSED ONLY, then transcript plain
       if (openerId) {
         try {
           const dmBody = layoutMessage(
