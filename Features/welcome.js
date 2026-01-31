@@ -3,7 +3,6 @@ import fs from "fs";
 
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// Resolve welcome channel safely
 async function resolveWelcomeChannel(guild, channelId) {
   if (!channelId) return null;
 
@@ -23,11 +22,15 @@ export default function registerWelcomeModule(client) {
     try {
       const conf = readConfig();
       const welcomeConf = conf?.welcome;
+      const globalGuildId = conf?.guildId;
 
       if (!welcomeConf?.enabled) return;
-      if (welcomeConf.guildId && member.guild.id !== welcomeConf.guildId) return;
+      if (globalGuildId && member.guild.id !== globalGuildId) return;
 
-      const channel = await resolveWelcomeChannel(member.guild, welcomeConf.channelId);
+      const channel = await resolveWelcomeChannel(
+        member.guild,
+        welcomeConf.channelId
+      );
       if (!channel || !channel.isTextBased()) return;
 
       const serverCount = member.guild.memberCount;
