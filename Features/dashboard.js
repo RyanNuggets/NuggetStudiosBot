@@ -119,10 +119,10 @@ function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquir
             content:
               `## **Thank you for contacting Nugget Studios.**\n` +
               `> Thanks for reaching out to Nugget Studios. Your request has been received and is now in our queue. Please share all relevant details so we can assist you efficiently. While we review your ticket, we ask that you do not tag or message staff directly.\n\n` +
-              `# **Ticket Information:**\n` +
-              `> `**User:**` <@${userId}>\n` +
-              `> `**Ticket Type:**` ${typeLabel}\n\n` +
-              `# `**Enquiry:**`\n` +
+              `### **Ticket Information:**\n` +
+              `> *User:* <@${userId}>\n` +
+              `> *Ticket Type:* ${typeLabel}\n\n` +
+              `### **Enquiry:**\n` +
               `> *${enquiry}*`
           },
           { type: 14, spacing: 2 },
