@@ -24,6 +24,12 @@
 
   "reviewChannelId": "1467248480249450580"
 },
+
+  "payment": {
+    "assetId": 1117747196,
+    "allowedRoleId": "1467069522014896258",
+    "logChannelId": "1467262297813684275"
+},
   
   "welcome": {
     "enabled": true,
