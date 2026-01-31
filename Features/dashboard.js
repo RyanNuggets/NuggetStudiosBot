@@ -85,7 +85,7 @@ const DASHBOARD_LAYOUT = {
           content:
             "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last. "
         },
-        // REMOVED the divider here (was { type: 14 })
+        // removed divider between text and dropdown ✅
         {
           type: 1,
           components: [
@@ -94,7 +94,7 @@ const DASHBOARD_LAYOUT = {
               custom_id: "dashboard_main_select",
               placeholder: "Select an option…",
               options: [
-                { label: "Studio Regulations", value: "regulations" }, // above support
+                { label: "Studio Regulations", value: "regulations" }, // above support ✅
                 { label: "Support", value: "support" }
               ]
             }
@@ -378,26 +378,34 @@ export async function handleDashboardInteractions(client, interaction) {
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
     const selected = interaction.values?.[0];
 
-    // Studio Regulations (EPHEMERAL)
+    // Studio Regulations (EPHEMERAL + safe ack)
     if (selected === "regulations") {
-      return interaction.reply({
-        ...STUDIO_REGULATIONS_PAYLOAD,
-        ephemeral: true
-      });
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      return interaction.editReply(STUDIO_REGULATIONS_PAYLOAD).catch(() => {});
     }
 
-    // Support
+    // Support (normal ephemeral)
     if (selected === "support") {
       const select = new StringSelectMenuBuilder()
         .setCustomId(IDS.ticketTypeSelect)
         .setPlaceholder("Choose ticket type…")
         .addOptions(TICKET_TYPES);
 
-      return interaction.reply({
-        content: "Select a ticket type:",
-        components: [new ActionRowBuilder().addComponents(select)],
-        ephemeral: true
-      });
+      return interaction
+        .reply({
+          content: "Select a ticket type:",
+          components: [new ActionRowBuilder().addComponents(select)],
+          ephemeral: true
+        })
+        .catch(async () => {
+          await interaction.deferReply({ ephemeral: true }).catch(() => {});
+          return interaction
+            .editReply({
+              content: "Select a ticket type:",
+              components: [new ActionRowBuilder().addComponents(select)]
+            })
+            .catch(() => {});
+        });
     }
   }
 
@@ -557,7 +565,10 @@ export async function handleDashboardInteractions(client, interaction) {
     try {
       if (existingOw && hasViewAllow) {
         await channel.permissionOverwrites.delete(targetId);
-        return interaction.reply({ content: `Removed <@${targetId}> from this ticket.`, ephemeral: true });
+        return interaction.reply({
+          content: `Removed <@${targetId}> from this ticket.`,
+          ephemeral: true
+        });
       } else {
         await channel.permissionOverwrites.edit(targetId, {
           ViewChannel: true,
@@ -648,7 +659,7 @@ export async function handleDashboardInteractions(client, interaction) {
       const { openerId, ticketTypeValue } = getTicketInfoFromTopic(topic);
       const handlerId = getClaimedBy(topic) ?? "none";
 
-      // Log: closed (component-based)
+      // Log: closed
       try {
         const closedLog = layoutMessage(
           `## 🔴 **Ticket Closed**\n` +
@@ -672,14 +683,14 @@ export async function handleDashboardInteractions(client, interaction) {
         transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
       }
 
-      // Transcript in logs (plain text)
+      // Transcript in logs
       try {
         await sendPlainTranscriptToChannel(client, conf.ticketLogsChannelId, channel.id, transcriptText);
       } catch (e) {
         console.error("Transcript send to logs failed:", e);
       }
 
-      // DM opener: CLOSED ONLY, then transcript plain
+      // DM opener: closed + transcript
       if (openerId) {
         try {
           const dmBody = layoutMessage(
