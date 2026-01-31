@@ -3,7 +3,11 @@ import { Routes } from "discord-api-types/v10";
 import {
   ActionRowBuilder,
   ChannelType,
+  ModalBuilder,
   PermissionFlagsBits,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
@@ -22,14 +26,30 @@ const IDS = {
   payCard: "orderhub_card",
   payRobux: "orderhub_robux",
 
-  // order ticket controls
+  // order ticket controls (inside ticket)
   ticketActionsSelect: "orderhub_ticket_actions_select",
-  ticketUserToggleSelect: "orderhub_ticket_user_toggle_select"
+  ticketUserToggleSelect: "orderhub_ticket_user_toggle_select",
+
+  // close -> review prompt buttons
+  reviewLeaveBtn: "orderhub_review_leave",
+  reviewSkipBtn: "orderhub_review_skip",
+
+  // review flow components
+  reviewDesignerSelect: "orderhub_review_designer_select",
+  reviewRatingSelect: "orderhub_review_rating_select",
+  reviewProductSelect: "orderhub_review_product_select",
+  reviewModal: "orderhub_review_modal",
+  reviewModalInput: "orderhub_review_message"
 };
+
+// review state: key = `${channelId}:${userId}`
+const REVIEW_STATE = new Map();
 
 // ---------------- BRAND ----------------
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165";
+
+const STAR_EMOJI = "<:star:1467246556649623694>";
 
 // ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
@@ -63,6 +83,7 @@ const ORDER_HUB_LAYOUT = {
 };
 
 // ---------------- PAYMENT PROMPT (EPHEMERAL) ----------------
+// IMPORTANT: raw JSON components only (no ActionRowBuilder) to avoid toJSON errors
 function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
   return {
     ephemeral: true,
@@ -85,12 +106,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
         type: 1,
         components: [
           { type: 2, style: 2, label: "PayPal", custom_id: `${IDS.payPaypal}:${encodedOrderType}` },
-          {
-            type: 2,
-            style: 2,
-            label: "Credit/Debit Card",
-            custom_id: `${IDS.payCard}:${encodedOrderType}`
-          },
+          { type: 2, style: 2, label: "Credit/Debit Card", custom_id: `${IDS.payCard}:${encodedOrderType}` },
           { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
         ]
       }
@@ -113,7 +129,7 @@ const hasRole = (interaction, roleId) => {
   return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 };
 
-// topic tags (single open order per user)
+// tags (ONE open order per user, regardless of options)
 const orderUserTag = (userId) => `ns_order_user:${userId}`;
 const orderMetaTag = (orderType, payType) => `ns_order_meta:${orderType}:${payType}`;
 const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
@@ -175,13 +191,13 @@ async function postRawDM(client, userId, body) {
   return postRaw(client, dmId, body);
 }
 
-async function logOrderMessage(client, conf, body) {
-  const logId = conf.orderLogsChannelId;
+async function logOrderMessage(client, ohConf, body) {
+  const logId = ohConf.orderLogsChannelId;
   if (!logId) return;
   return postRaw(client, logId, body);
 }
 
-// ---------------- LOG / DM LAYOUT ----------------
+// ---------------- COMPONENT-BASED LAYOUT HELPERS ----------------
 function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   const components = [];
   if (pingLine) components.push({ type: 10, content: pingLine });
@@ -305,7 +321,7 @@ async function sendPlainTranscriptToDM(client, userId, orderId, transcriptText) 
   }
 }
 
-// ---------------- BUILD ORDER OPEN MESSAGE ----------------
+// ---------------- ORDER OPEN MESSAGE ----------------
 function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLabel }) {
   return {
     flags: 32768,
@@ -321,7 +337,8 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
             type: 10,
             content:
               `## **Order Request Received**\n` +
-              `> Thanks for choosing **Nugget Studios**. Your order request has been received and is now in our queue. Please provide all relevant details (references, theme, text, size, deadline). Avoid tagging staff directly.\n\n` +
+              `> Thanks for choosing **Nugget Studios**. Your order request has been received and is now in our queue.\n` +
+              `> Please provide all relevant details (references, theme, text, size, deadline). Avoid tagging staff directly.\n\n` +
               `### **Order Information:**\n` +
               `> *User:* <@${userId}>\n` +
               `> *Order Type:* **${orderTypeLabel}**\n` +
@@ -351,12 +368,10 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
   };
 }
 
-// ---------------- FIND EXISTING OPEN ORDER (ANY TYPE/PAY) ----------------
+// ---------------- FIND EXISTING OPEN ORDER (ANY OPTION) ----------------
 async function findExistingOrderChannel(guild, oh, userId) {
   await guild.channels.fetch().catch(() => {});
   const tag = orderUserTag(userId);
-
-  // search both categories (fiat + robux)
   const cats = [oh?.categoryFiatId, oh?.categoryRobuxId].filter(Boolean);
 
   return (
@@ -368,6 +383,215 @@ async function findExistingOrderChannel(guild, oh, userId) {
         ch.topic.includes(tag)
     ) ?? null
   );
+}
+
+// ---------------- CLOSE PROMPT (COMPLETED -> REVIEW OR SKIP) ----------------
+function buildClosePromptPayload(openerId) {
+  return {
+    flags: 32768,
+    allowed_mentions: { parse: ["users"] },
+    components: [
+      { type: 10, content: `-# <@${openerId}>` },
+      {
+        type: 17,
+        components: [
+          { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+          { type: 14, spacing: 1 },
+          {
+            type: 10,
+            content:
+              "## Your order has now been completed!\n" +
+              "If you’re happy with the final result, we’d really appreciate you taking a moment to leave a review, " +
+              "your feedback helps us improve and supports Nugget Studios. If you’d prefer not to leave a review, " +
+              "feel free to select “Close without Review.”"
+          },
+          { type: 14, spacing: 2 },
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 2, label: "Leave a Review", custom_id: IDS.reviewLeaveBtn },
+              { type: 2, style: 2, label: "Close Without Review", custom_id: IDS.reviewSkipBtn }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+}
+
+// ---------------- REVIEW FLOW UI ----------------
+function buildDesignerPickerEphemeral() {
+  return {
+    content: "Select the **designer** you’re reviewing:",
+    components: [
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId(IDS.reviewDesignerSelect)
+          .setPlaceholder("Choose a designer…")
+          .setMinValues(1)
+          .setMaxValues(1)
+      )
+    ],
+    ephemeral: true
+  };
+}
+
+function buildRatingSelectEphemeral() {
+  return {
+    content: "Select a **rating**:",
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(IDS.reviewRatingSelect)
+          .setPlaceholder("Choose 1–5…")
+          .addOptions([
+            { label: "1", value: "1", emoji: { name: "⭐" } },
+            { label: "2", value: "2", emoji: { name: "⭐" } },
+            { label: "3", value: "3", emoji: { name: "⭐" } },
+            { label: "4", value: "4", emoji: { name: "⭐" } },
+            { label: "5", value: "5", emoji: { name: "⭐" } }
+          ])
+      )
+    ],
+    ephemeral: true
+  };
+}
+
+function buildProductSelectEphemeral() {
+  return {
+    content: "Select the **product** you ordered:",
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(IDS.reviewProductSelect)
+          .setPlaceholder("Select a product…")
+          .addOptions([
+            { label: "Banner", value: "Banner" },
+            { label: "Bundle", value: "Bundle" }
+          ])
+      )
+    ],
+    ephemeral: true
+  };
+}
+
+// Component-based “review embed” (same style as your other messages)
+function buildReviewComponentMessage({ userId, designerId, rating, product, message, orderChannelId }) {
+  const stars = Array.from({ length: Number(rating) }, () => STAR_EMOJI).join("");
+
+  const safeMsg = String(message ?? "").trim() || "No message provided.";
+  const quoted = safeMsg.replace(/\r/g, "").split("\n").map((l) => `> ${l}`).join("\n");
+
+  const content =
+    `## **New Order Review**\n` +
+    `> **Customer:** <@${userId}>\n` +
+    `> **Designer:** <@${designerId}>\n` +
+    `> **Rating:** ${stars}  \`(${rating}/5)\`\n` +
+    `> **Product:** **${product}**\n` +
+    `> **Order Ticket:** <#${orderChannelId}>\n\n` +
+    `### **Message**\n` +
+    `${quoted}`;
+
+  return {
+    flags: 32768,
+    allowed_mentions: { parse: ["users"] },
+    components: [
+      {
+        type: 17,
+        components: [
+          { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+          { type: 14, spacing: 2 },
+          { type: 10, content },
+          { type: 14, spacing: 2 }
+        ]
+      }
+    ]
+  };
+}
+
+// ---------------- CLOSE FLOW (TRANSCRIPT + LOG + DM + DELETE) ----------------
+async function closeOrderNow(client, interaction, channel, oh) {
+  const topic = channel.topic ?? "";
+  const openerId = getOrderUserFromTopic(topic);
+  const { orderType, payType } = getOrderMetaFromTopic(topic);
+  const handlerId = getClaimedBy(topic) ?? "none";
+
+  const staffRoleId = getStaffRoleFromTopic(topic) || oh?.staffRoleId;
+
+  const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
+  const payTypeLabel =
+    payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : payType === "robux" ? "Robux" : "Unknown";
+
+  // Log: closed (component-based)
+  try {
+    const closedLog = layoutMessage(
+      `## 🔴 **Order Closed**\n` +
+        `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
+        `> **User:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
+        `> **Type:** **${orderTypeLabel}**\n` +
+        `> **Payment:** **${payTypeLabel}**\n` +
+        `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
+        `> **Staff Role:** ${staffRoleId ? `<@&${staffRoleId}>` : "*Unknown*"}`
+    );
+    await logOrderMessage(client, oh, closedLog);
+  } catch (e) {
+    console.error("[ORDERHUB] closed log failed:", e);
+  }
+
+  // Transcript
+  let transcriptText = "";
+  try {
+    transcriptText = await buildTranscriptTxt(channel);
+  } catch (e) {
+    console.error("[ORDERHUB] transcript build failed:", e);
+    transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
+  }
+
+  // Transcript to logs
+  try {
+    await sendPlainTranscriptToChannel(client, oh.orderLogsChannelId, channel.id, transcriptText);
+  } catch (e) {
+    console.error("[ORDERHUB] transcript to logs failed:", e);
+  }
+
+  // DM opener: closed + transcript
+  if (openerId) {
+    try {
+      const dmBody = layoutMessage(
+        `## ✅ **Your order has been closed**\n` +
+          `> **Order ID:** \`${channel.id}\`\n` +
+          `> **Type:** **${orderTypeLabel}**\n` +
+          `> **Payment:** **${payTypeLabel}**\n` +
+          `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}\n\n` +
+          `> If you need anything else, you can open a new order from the Order Hub.`
+      );
+      await postRawDM(client, openerId, dmBody);
+    } catch (e) {
+      console.error("[ORDERHUB] DM closed failed:", e);
+    }
+
+    try {
+      await sendPlainTranscriptToDM(client, openerId, channel.id, transcriptText);
+    } catch (e) {
+      console.error("[ORDERHUB] DM transcript failed:", e);
+    }
+  }
+
+  // Delete
+  setTimeout(() => {
+    channel.delete("Order closed").catch(() => {});
+  }, 2500);
+
+  // If we still can respond to interaction, do it
+  try {
+    if (interaction?.isRepliable?.()) {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ content: "✅ Order closed.", ephemeral: true }).catch(() => {});
+      } else {
+        await interaction.reply({ content: "✅ Order closed.", ephemeral: true }).catch(() => {});
+      }
+    }
+  } catch {}
 }
 
 // ---------------- SEND ORDER HUB MESSAGE ----------------
@@ -388,47 +612,42 @@ export async function handleOrderHubInteractions(client, interaction) {
 
   if (!oh) return;
 
-  // only run in main server
+  // only run in main server (if you set guildId)
   if (globalGuildId && interaction.guild?.id && interaction.guild.id !== globalGuildId) return;
 
-  // ------------- BUTTONS -------------
+  // ---------------- BUTTONS ----------------
   if (interaction.isButton?.()) {
     // anti-spam
     if (cooldownHit(interaction.user.id)) {
       return interaction.reply({ content: "Slow down 😭", ephemeral: true }).catch(() => {});
     }
 
-    // If they already have any order open, block early (even before payment prompt)
+    const channel = interaction.channel;
+
+    // ORDER TYPE -> PAYMENT PROMPT
     if (interaction.customId === IDS.orderStandardBtn || interaction.customId === IDS.orderPackageBtn) {
+      // ONE open order total
       const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
       if (existing) {
-        return interaction.reply({
-          content: `You already have an open order: <#${existing.id}>`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `You already have an open order: <#${existing.id}>`, ephemeral: true });
       }
-    }
 
-    // Order type -> payment prompt
-    if (interaction.customId === IDS.orderStandardBtn) {
-      return interaction.reply(buildPaymentPrompt("Standard Order", "standard"));
-    }
-    if (interaction.customId === IDS.orderPackageBtn) {
+      if (interaction.customId === IDS.orderStandardBtn) {
+        return interaction.reply(buildPaymentPrompt("Standard Order", "standard"));
+      }
       return interaction.reply(buildPaymentPrompt("Package Order", "package"));
     }
 
-    // Payment buttons -> create ticket
+    // PAYMENT -> CREATE ORDER TICKET
     if (
       interaction.customId.startsWith(IDS.payPaypal + ":") ||
       interaction.customId.startsWith(IDS.payCard + ":") ||
       interaction.customId.startsWith(IDS.payRobux + ":")
     ) {
+      // ONE open order total
       const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
       if (existing) {
-        return interaction.reply({
-          content: `You already have an open order: <#${existing.id}>`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `You already have an open order: <#${existing.id}>`, ephemeral: true });
       }
 
       const [base, orderType] = interaction.customId.split(":");
@@ -438,10 +657,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
       if (!oh?.staffRoleId) {
-        return interaction.reply({
-          content: "Missing orderhub.staffRoleId in config.json",
-          ephemeral: true
-        });
+        return interaction.reply({ content: "Missing orderhub.staffRoleId in config.json", ephemeral: true });
       }
       if (!oh?.categoryFiatId || !oh?.categoryRobuxId) {
         return interaction.reply({
@@ -453,20 +669,16 @@ export async function handleOrderHubInteractions(client, interaction) {
       const parentId = payType === "robux" ? oh.categoryRobuxId : oh.categoryFiatId;
 
       const channelName = safeChannelName(
-        (oh.orderChannelNameFormat ?? "order-{username}").replace(
-          "{username}",
-          interaction.user.username
-        )
+        (oh.orderChannelNameFormat ?? "order-{username}").replace("{username}", interaction.user.username)
       );
 
-      // topic includes: user tag + meta + staff role
       const topic =
         appendTopicTag(
           appendTopicTag(orderUserTag(interaction.user.id), orderMetaTag(orderType, payType)),
           staffRoleTopicTag(oh.staffRoleId)
         );
 
-      const channel = await guild.channels.create({
+      const created = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: parentId,
@@ -498,12 +710,11 @@ export async function handleOrderHubInteractions(client, interaction) {
       });
 
       const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
-      const payTypeLabel =
-        payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : "Robux";
+      const payTypeLabel = payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : "Robux";
 
       await postRaw(
         client,
-        channel.id,
+        created.id,
         buildOrderOpenPayload({
           userId: interaction.user.id,
           staffRoleId: oh.staffRoleId,
@@ -512,11 +723,11 @@ export async function handleOrderHubInteractions(client, interaction) {
         })
       );
 
-      // Log opened
+      // log opened
       try {
         const openedLog = layoutMessage(
           `## 🟢 **Order Opened**\n` +
-            `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
+            `> **Order:** <#${created.id}> (\`${created.id}\`)\n` +
             `> **User:** <@${interaction.user.id}>\n` +
             `> **Type:** **${orderTypeLabel}**\n` +
             `> **Payment:** **${payTypeLabel}**\n` +
@@ -527,16 +738,39 @@ export async function handleOrderHubInteractions(client, interaction) {
         console.error("[ORDERHUB] open log failed:", e);
       }
 
-      // Disable the ephemeral payment buttons to reduce spam
-      // (editReply works after reply; but we replied earlier with the payment prompt in a different interaction)
-      return interaction.reply({
-        content: `✅ Your order has been created: <#${channel.id}>`,
-        ephemeral: true
+      return interaction.reply({ content: `✅ Your order has been created: <#${created.id}>`, ephemeral: true });
+    }
+
+    // REVIEW BUTTONS (posted inside the order channel)
+    if (interaction.customId === IDS.reviewLeaveBtn || interaction.customId === IDS.reviewSkipBtn) {
+      if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+      const openerId = getOrderUserFromTopic(channel.topic ?? "");
+      if (!openerId) return interaction.reply({ content: "Could not find the order owner.", ephemeral: true });
+
+      // only the customer can decide review/skip
+      if (interaction.user.id !== openerId) {
+        return interaction.reply({ content: "Only the customer can use these buttons.", ephemeral: true });
+      }
+
+      // skip -> close now
+      if (interaction.customId === IDS.reviewSkipBtn) {
+        await interaction.reply({ content: "Closing without review…", ephemeral: true }).catch(() => {});
+        return closeOrderNow(client, interaction, channel, oh);
+      }
+
+      // leave -> start flow
+      REVIEW_STATE.set(`${channel.id}:${interaction.user.id}`, {
+        userId: interaction.user.id,
+        orderChannelId: channel.id
       });
+
+      return interaction.reply(buildDesignerPickerEphemeral());
     }
   }
 
-  // -------- Ticket Actions select menu --------
+  // ---------------- SELECT MENUS ----------------
+  // Ticket actions dropdown (inside order ticket)
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.ticketActionsSelect) {
     const action = interaction.values[0];
     const channel = interaction.channel;
@@ -558,9 +792,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (hasClaimTag(topic)) {
         const claimedBy = getClaimedBy(topic);
         return interaction.reply({
-          content: claimedBy
-            ? `This order is already claimed by <@${claimedBy}>.`
-            : "This order has already been claimed.",
+          content: claimedBy ? `This order is already claimed by <@${claimedBy}>.` : "This order has already been claimed.",
           ephemeral: true
         });
       }
@@ -602,83 +834,23 @@ export async function handleOrderHubInteractions(client, interaction) {
       });
     }
 
-    // CLOSE
+    // CLOSE -> post completed prompt (review/skip)
     if (action === "close") {
-      await interaction.reply({ content: "Closing order… generating transcript.", ephemeral: true });
-
       const topic = channel.topic ?? "";
       const openerId = getOrderUserFromTopic(topic);
-      const { orderType, payType } = getOrderMetaFromTopic(topic);
-      const handlerId = getClaimedBy(topic) ?? "none";
 
-      const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
-      const payTypeLabel =
-        payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : "Robux";
+      await interaction.reply({ content: "Sent close options.", ephemeral: true }).catch(() => {});
+      if (!openerId) return;
 
-      // Log closed
-      try {
-        const closedLog = layoutMessage(
-          `## 🔴 **Order Closed**\n` +
-            `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
-            `> **User:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
-            `> **Type:** **${orderTypeLabel}**\n` +
-            `> **Payment:** **${payTypeLabel}**\n` +
-            `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
-            `> **Staff Role:** <@&${staffRoleId}>`
-        );
-        await logOrderMessage(client, oh, closedLog);
-      } catch (e) {
-        console.error("[ORDERHUB] closed log failed:", e);
-      }
-
-      // Transcript
-      let transcriptText = "";
-      try {
-        transcriptText = await buildTranscriptTxt(channel);
-      } catch (e) {
-        console.error("[ORDERHUB] transcript build failed:", e);
-        transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
-      }
-
-      // Transcript in logs
-      try {
-        await sendPlainTranscriptToChannel(client, oh.orderLogsChannelId, channel.id, transcriptText);
-      } catch (e) {
-        console.error("[ORDERHUB] transcript to logs failed:", e);
-      }
-
-      // DM opener
-      if (openerId) {
-        try {
-          const dmBody = layoutMessage(
-            `## ✅ **Your order has been closed**\n` +
-              `> **Order ID:** \`${channel.id}\`\n` +
-              `> **Type:** **${orderTypeLabel}**\n` +
-              `> **Payment:** **${payTypeLabel}**\n` +
-              `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}\n\n` +
-              `> If you need anything else, you can open a new order from the Order Hub.`
-          );
-          await postRawDM(client, openerId, dmBody);
-        } catch (e) {
-          console.error("[ORDERHUB] DM closed failed:", e);
-        }
-
-        try {
-          await sendPlainTranscriptToDM(client, openerId, channel.id, transcriptText);
-        } catch (e) {
-          console.error("[ORDERHUB] DM transcript failed:", e);
-        }
-      }
-
-      setTimeout(() => {
-        channel.delete("Order closed").catch(() => {});
-      }, 2500);
+      await postRaw(client, channel.id, buildClosePromptPayload(openerId)).catch((e) => {
+        console.error("[ORDERHUB] failed to send close prompt:", e);
+      });
 
       return;
     }
   }
 
-  // -------- Add/Remove user picker --------
+  // Add/Remove user picker
   if (interaction.isUserSelectMenu?.() && interaction.customId === IDS.ticketUserToggleSelect) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
@@ -699,10 +871,7 @@ export async function handleOrderHubInteractions(client, interaction) {
     const isStaff = targetMember?.roles?.cache?.has?.(staffRoleId) ?? false;
 
     if (isStaff) {
-      return interaction.reply({
-        content: "You can’t add or remove staff members from orders.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "You can’t add or remove staff members from orders.", ephemeral: true });
     }
 
     const existingOw = channel.permissionOverwrites.cache.get(targetId);
@@ -711,10 +880,7 @@ export async function handleOrderHubInteractions(client, interaction) {
     try {
       if (existingOw && hasViewAllow) {
         await channel.permissionOverwrites.delete(targetId);
-        return interaction.reply({
-          content: `Removed <@${targetId}> from this order.`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `Removed <@${targetId}> from this order.`, ephemeral: true });
       } else {
         await channel.permissionOverwrites.edit(targetId, {
           ViewChannel: true,
@@ -723,14 +889,105 @@ export async function handleOrderHubInteractions(client, interaction) {
           AttachFiles: true,
           EmbedLinks: true
         });
-        return interaction.reply({
-          content: `Added <@${targetId}> to this order.`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `Added <@${targetId}> to this order.`, ephemeral: true });
       }
     } catch (e) {
       console.error("[ORDERHUB] Toggle user failed:", e);
       return interaction.reply({ content: "Failed to update order permissions.", ephemeral: true });
     }
+  }
+
+  // ---------------- REVIEW FLOW SELECTS ----------------
+  if (interaction.isUserSelectMenu?.() && interaction.customId === IDS.reviewDesignerSelect) {
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+    const key = `${channel.id}:${interaction.user.id}`;
+    const state = REVIEW_STATE.get(key);
+    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+
+    state.designerId = interaction.values?.[0];
+    REVIEW_STATE.set(key, state);
+
+    return interaction.reply(buildRatingSelectEphemeral());
+  }
+
+  if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.reviewRatingSelect) {
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+    const key = `${channel.id}:${interaction.user.id}`;
+    const state = REVIEW_STATE.get(key);
+    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+
+    state.rating = interaction.values?.[0];
+    REVIEW_STATE.set(key, state);
+
+    return interaction.reply(buildProductSelectEphemeral());
+  }
+
+  if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.reviewProductSelect) {
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+    const key = `${channel.id}:${interaction.user.id}`;
+    const state = REVIEW_STATE.get(key);
+    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+
+    state.product = interaction.values?.[0];
+    REVIEW_STATE.set(key, state);
+
+    const modal = new ModalBuilder().setCustomId(IDS.reviewModal).setTitle("Leave a Review");
+
+    const input = new TextInputBuilder()
+      .setCustomId(IDS.reviewModalInput)
+      .setLabel("Your message")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMinLength(5)
+      .setMaxLength(800);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return interaction.showModal(modal);
+  }
+
+  // ---------------- REVIEW MODAL SUBMIT ----------------
+  if (interaction.isModalSubmit?.() && interaction.customId === IDS.reviewModal) {
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+    const key = `${channel.id}:${interaction.user.id}`;
+    const state = REVIEW_STATE.get(key);
+
+    if (!state?.designerId || !state?.rating || !state?.product) {
+      return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+    }
+
+    if (!oh?.reviewChannelId) {
+      return interaction.reply({ content: "Missing **orderhub.reviewChannelId** in config.json", ephemeral: true });
+    }
+
+    const msg = interaction.fields.getTextInputValue(IDS.reviewModalInput);
+
+    // send review (component-based message, with <:star:...> stars)
+    await postRaw(
+      client,
+      oh.reviewChannelId,
+      buildReviewComponentMessage({
+        userId: interaction.user.id,
+        designerId: state.designerId,
+        rating: state.rating,
+        product: state.product,
+        message: msg,
+        orderChannelId: channel.id
+      })
+    ).catch((e) => console.error("[ORDERHUB] review post failed:", e));
+
+    REVIEW_STATE.delete(key);
+
+    await interaction.reply({ content: "✅ Thanks! Your review has been submitted. Closing the order…", ephemeral: true }).catch(() => {});
+
+    // close order after review (transcript + logs + DM + delete)
+    return closeOrderNow(client, interaction, channel, oh);
   }
 }
