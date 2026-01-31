@@ -459,7 +459,7 @@ export async function handleDashboardInteractions(client, interaction) {
     await logTicket(client, conf, openedLog);
 
     return interaction.reply({
-      content: `You have successfully created a ticket. View your ticket ⁠<#${channel.id}>.`,
+      content: `You have successfully created a **${ticketTypeLabel(ticketTypeValue)}** ticket. View your ticket ⁠<#${channel.id}>.`,
       ephemeral: true
     });
   }
