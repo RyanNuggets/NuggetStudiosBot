@@ -1,21 +1,26 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { sendDashboard, handleDashboardInteractions } from "./Features/dashboard.js";
+import registerWelcomeModule from "./Features/welcome.js";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers // ✅ REQUIRED for welcome on join
   ],
   partials: [Partials.Channel]
 });
 
 // Toggle this to true only when you want to post the dashboard message.
 // After it posts, set back to false so it doesn't repost on every restart.
-const POST_DASHBOARD_ON_START = true;
+const POST_DASHBOARD_ON_START = false;
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+
+  // ✅ Register feature modules
+  registerWelcomeModule(client);
 
   if (POST_DASHBOARD_ON_START) {
     try {
