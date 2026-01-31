@@ -85,13 +85,25 @@ const safeChannelName = (name) =>
 const isSupport = (interaction, supportRoleId) => {
   const member = interaction.member;
   if (!member) return false;
-  // member.roles can be a cache or array depending on partials; handle both
   const roles = member.roles?.cache ?? member.roles;
   return roles?.has ? roles.has(supportRoleId) : Array.isArray(roles) ? roles.includes(supportRoleId) : false;
 };
 
 // Hidden tag stored in channel topic to prevent duplicates per type
 const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
+
+// ✅ Claim tag stored in channel topic (reliable)
+const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
+const hasClaimTag = (topic = "") => topic.includes("ns_claimed:");
+const getClaimedBy = (topic = "") => {
+  const m = topic.match(/ns_claimed:(\d{5,})/);
+  return m ? m[1] : null;
+};
+
+const appendTopicTag = (topic = "", tag = "") => {
+  const next = (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
+  return next;
+};
 
 // ---------------- BUILD TICKET MESSAGE ----------------
 function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquiry }) {
@@ -208,7 +220,6 @@ export async function handleDashboardInteractions(client, interaction) {
     if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
     // ✅ Only one ticket per type per user
-    // Ensure channels are cached
     await guild.channels.fetch().catch(() => {});
     const tag = ticketTopicTag(interaction.user.id, ticketTypeValue);
 
@@ -236,7 +247,7 @@ export async function handleDashboardInteractions(client, interaction) {
       name: channelName,
       type: ChannelType.GuildText,
       parent: conf.ticketCategoryId,
-      topic: tag, // hidden marker for duplicate prevention
+      topic: tag, // hidden marker
       permissionOverwrites: [
         { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
@@ -292,19 +303,24 @@ export async function handleDashboardInteractions(client, interaction) {
     const targetId = interaction.values?.[0];
     if (!targetId) return interaction.reply({ content: "No user selected.", ephemeral: true });
 
-    // Toggle: if user already has overwrite, remove it. If not, add it.
-    const existingOw = channel.permissionOverwrites.cache.get(targetId);
+    // ✅ prevent staff adding/removing staff
+    const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+    if (targetMember && targetMember.roles.cache.has(conf.supportRoleId)) {
+      return interaction.reply({
+        content: "You can’t add or remove support staff from tickets.",
+        ephemeral: true
+      });
+    }
 
-    // Determine if they currently have ViewChannel allowed by explicit overwrite
+    // Toggle overwrite
+    const existingOw = channel.permissionOverwrites.cache.get(targetId);
     const hasViewAllow = existingOw?.allow?.has(PermissionFlagsBits.ViewChannel) ?? false;
 
     try {
       if (existingOw && hasViewAllow) {
-        // Remove overwrite = removes them from the ticket
         await channel.permissionOverwrites.delete(targetId);
         return interaction.reply({ content: `Removed <@${targetId}> from this ticket.`, ephemeral: true });
       } else {
-        // Add overwrite = adds them to the ticket
         await channel.permissionOverwrites.edit(targetId, {
           ViewChannel: true,
           SendMessages: true,
@@ -331,51 +347,52 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
+    const channel = interaction.channel;
     const msg = interaction.message;
 
-    // Detect if already claimed (placeholder contains "claimed by")
-    const alreadyClaimed =
-      msg?.components?.some((row) =>
-        row.components?.some((c) => {
-          const cid = c.customId ?? c.custom_id;
-          const ph = (c.placeholder ?? "").toString().toLowerCase();
-          return cid === IDS.ticketActionsSelect && ph.includes("claimed by");
-        })
-      ) ?? false;
-
-    // CLAIM
+    // ✅ CLAIM (only one person total, enforced by channel topic tag)
     if (action === "claim") {
-      if (alreadyClaimed) {
-        return interaction.reply({ content: "This ticket has already been claimed.", ephemeral: true });
+      const topic = channel?.topic ?? "";
+      if (hasClaimTag(topic)) {
+        const claimedBy = getClaimedBy(topic);
+        return interaction.reply({
+          content: claimedBy
+            ? `This ticket is already claimed by <@${claimedBy}>.`
+            : "This ticket has already been claimed.",
+          ephemeral: true
+        });
       }
 
       const claimMessage = `Hello! My name is <@${interaction.user.id}> and I’ll be assisting you with this ticket.`;
 
-      // Reply to the embed message
       await msg.reply({
         content: claimMessage,
         allowedMentions: { parse: ["users"] }
       });
 
-      // Mark as claimed (keep menu usable for Close + Add/Remove)
+      // store claim in channel topic (reliable)
+      try {
+        const nextTopic = appendTopicTag(topic, claimedTopicTag(interaction.user.id));
+        await channel.setTopic(nextTopic);
+      } catch {
+        // ignore if can't set topic
+      }
+
+      // Optional: update placeholder visually (not relied on)
       try {
         const newComponents = msg.components.map((row) => {
           const rowJson = row.toJSON();
           rowJson.components = rowJson.components.map((c) => {
             if (c.type === 3 && c.custom_id === IDS.ticketActionsSelect) {
-              return {
-                ...c,
-                placeholder: `Claimed by ${interaction.user.username}`
-              };
+              return { ...c, placeholder: `Claimed by ${interaction.user.username}` };
             }
             return c;
           });
           return rowJson;
         });
-
         await msg.edit({ components: newComponents });
       } catch {
-        // ignore if we can't edit
+        // ignore
       }
 
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
@@ -390,7 +407,7 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
-    // ADD/REMOVE USER (opens a user picker)
+    // ADD/REMOVE USER (opens user picker)
     if (action === "toggle_user") {
       const picker = new UserSelectMenuBuilder()
         .setCustomId(IDS.ticketUserToggleSelect)
