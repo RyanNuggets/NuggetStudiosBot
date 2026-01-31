@@ -85,7 +85,7 @@ const DASHBOARD_LAYOUT = {
           content:
             "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last. "
         },
-        { type: 14 },
+        // REMOVED the divider here (was { type: 14 })
         {
           type: 1,
           components: [
@@ -94,8 +94,8 @@ const DASHBOARD_LAYOUT = {
               custom_id: "dashboard_main_select",
               placeholder: "Select an option…",
               options: [
-                { label: "Support", value: "support" },
-                { label: "Studio Regulations", value: "regulations" }
+                { label: "Studio Regulations", value: "regulations" }, // above support
+                { label: "Support", value: "support" }
               ]
             }
           ]
@@ -136,16 +136,11 @@ const hasRole = (interaction, roleId) => {
   const member = interaction.member;
   if (!member || !roleId) return false;
   const roles = member.roles?.cache ?? member.roles;
-  return roles?.has
-    ? roles.has(roleId)
-    : Array.isArray(roles)
-    ? roles.includes(roleId)
-    : false;
+  return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 };
 
 // Topic tags
-const ticketTopicTag = (userId, ticketTypeValue) =>
-  `ns_ticket:${userId}:${ticketTypeValue}`;
+const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
 const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
 
@@ -166,8 +161,7 @@ const getStaffRoleFromTopic = (topic = "") => {
   return m ? m[1] : null;
 };
 
-const appendTopicTag = (topic = "", tag = "") =>
-  (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
+const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
 // ---------------- COMPONENT-BASED LAYOUT ----------------
 const BRAND_IMAGE =
@@ -384,14 +378,15 @@ export async function handleDashboardInteractions(client, interaction) {
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
     const selected = interaction.values?.[0];
 
-    // NEW: Studio Regulations option
+    // Studio Regulations (EPHEMERAL)
     if (selected === "regulations") {
-      await interaction.deferUpdate().catch(() => {});
-      await postRaw(client, interaction.channelId, STUDIO_REGULATIONS_PAYLOAD);
-      return;
+      return interaction.reply({
+        ...STUDIO_REGULATIONS_PAYLOAD,
+        ephemeral: true
+      });
     }
 
-    // Existing: Support option
+    // Support
     if (selected === "support") {
       const select = new StringSelectMenuBuilder()
         .setCustomId(IDS.ticketTypeSelect)
