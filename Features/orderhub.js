@@ -1,12 +1,10 @@
+// /Features/orderhub.js
 import { Routes } from "discord-api-types/v10";
 import {
   ActionRowBuilder,
   ChannelType,
-  ModalBuilder,
   PermissionFlagsBits,
   StringSelectMenuBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
@@ -16,7 +14,7 @@ const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
 // ---------------- IDS (ORDER HUB) ----------------
 const IDS = {
-  // order hub buttons
+  // public order hub buttons
   orderStandardBtn: "orderhub_standard",
   orderPackageBtn: "orderhub_package",
 
@@ -27,17 +25,14 @@ const IDS = {
 
   // ticket actions (same behavior as support tickets)
   ticketActionsSelect: "orderhub_ticket_actions_select",
-  ticketUserToggleSelect: "orderhub_ticket_user_toggle_select",
-
-  // optional modal (not required now, but kept if you want later)
-  modalBase: "orderhub_enquiry_modal",
-  modalInput: "orderhub_enquiry_input"
+  ticketUserToggleSelect: "orderhub_ticket_user_toggle_select"
 };
 
 // ---------------- BRAND / IMAGES ----------------
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165";
 
+// ---------------- ORDER HUB MESSAGE (PUBLIC; COMPONENT-V2 OK) ----------------
 const ORDER_HUB_LAYOUT = {
   flags: 32768,
   components: [
@@ -72,9 +67,11 @@ const ORDER_HUB_LAYOUT = {
 };
 
 // ---------------- PAYMENT PROMPT (EPHEMERAL EMBED + BUTTONS) ----------------
+// NOTE: Must be RAW JSON components (not builders) to avoid "toJSON is not a function"
 function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
   return {
     ephemeral: true,
+    allowedMentions: { parse: [] },
     embeds: [
       { image: { url: BRAND_IMAGE } },
       {
@@ -89,14 +86,20 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
       }
     ],
     components: [
-      new ActionRowBuilder().addComponents(
-        // encode order type in custom_id so we know what they picked earlier
-        { type: 2, style: 2, label: "PayPal", custom_id: `${IDS.payPaypal}:${encodedOrderType}` },
-        { type: 2, style: 2, label: "Credit/Debit Card", custom_id: `${IDS.payCard}:${encodedOrderType}` },
-        { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
-      )
-    ],
-    allowedMentions: { parse: [] }
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 2, label: "PayPal", custom_id: `${IDS.payPaypal}:${encodedOrderType}` },
+          {
+            type: 2,
+            style: 2,
+            label: "Credit/Debit Card",
+            custom_id: `${IDS.payCard}:${encodedOrderType}`
+          },
+          { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
+        ]
+      }
+    ]
   };
 }
 
@@ -115,7 +118,7 @@ const hasRole = (interaction, roleId) => {
   return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 };
 
-// topic tags (separate namespace so it doesn’t collide with your support tickets)
+// topic tags (separate namespace so it doesn’t collide with support tickets)
 const orderTopicTag = (userId, orderType, payType) => `ns_order:${userId}:${orderType}:${payType}`;
 const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
@@ -352,7 +355,7 @@ export async function handleOrderHubInteractions(client, interaction) {
   const oh = conf.orderhub;
   const globalGuildId = conf.guildId;
 
-  // Safety: only run in your main server
+  // only run in your main server
   if (globalGuildId && interaction.guild?.id && interaction.guild.id !== globalGuildId) return;
 
   // -------- Order type buttons -> show payment method (ephemeral) --------
@@ -371,8 +374,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       interaction.customId.startsWith(IDS.payRobux + ":")
     ) {
       const [base, orderType] = interaction.customId.split(":");
-      const payType =
-        base === IDS.payPaypal ? "paypal" : base === IDS.payCard ? "card" : "robux";
+      const payType = base === IDS.payPaypal ? "paypal" : base === IDS.payCard ? "card" : "robux";
 
       const guild = interaction.guild;
       if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
@@ -392,7 +394,7 @@ export async function handleOrderHubInteractions(client, interaction) {
 
       const parentId = payType === "robux" ? oh.categoryRobuxId : oh.categoryFiatId;
 
-      // one open order per user per orderType (optional but nice)
+      // one open order per type per user (within that category)
       await guild.channels.fetch().catch(() => {});
       const tag = orderTopicTag(interaction.user.id, orderType, payType);
 
