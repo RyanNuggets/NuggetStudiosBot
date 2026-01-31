@@ -1,0 +1,12 @@
+{
+  "guildId": "1466859022161416368",
+
+  "dashboard": {
+    "dashboardChannelId": "1467054193817944168",
+
+    "ticketCategoryId": "1467054322297737309",
+    "supportRoleId": "1467054430212984832",
+
+    "ticketChannelNameFormat": "ticket-{username}"
+  }
+}
