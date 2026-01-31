@@ -14,7 +14,7 @@ import fs from "fs";
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------------- DASHBOARD LAYOUT (PUBLIC MESSAGE; COMPONENT-BASED OK) ----------------
+// ---------------- DASHBOARD LAYOUT ----------------
 const DASHBOARD_LAYOUT = {
   flags: 32768,
   components: [
@@ -37,6 +37,7 @@ const DASHBOARD_LAYOUT = {
           content:
             "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last."
         },
+        // Dropdown: Regulations + About Us
         {
           type: 1,
           components: [
@@ -46,8 +47,26 @@ const DASHBOARD_LAYOUT = {
               placeholder: "Select an option…",
               options: [
                 { label: "Studio Regulations", value: "regulations" },
-                { label: "Support", value: "support" }
+                { label: "About Us", value: "about" }
               ]
+            }
+          ]
+        },
+        // Buttons under dropdown: Support + Website
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 1, // Primary
+              custom_id: "dashboard_support_button",
+              label: "Support"
+            },
+            {
+              type: 2,
+              style: 5, // Link
+              url: "https://nuggetstudios.xyz",
+              label: "Website"
             }
           ]
         }
@@ -68,6 +87,7 @@ const ticketTypeLabel = (value) =>
 // ---------------- IDS ----------------
 const IDS = {
   mainSelect: "dashboard_main_select",
+  supportButton: "dashboard_support_button",
   ticketTypeSelect: "support_ticket_type_select",
   modalBase: "support_enquiry_modal",
   modalInput: "support_enquiry_input",
@@ -114,32 +134,11 @@ const getStaffRoleFromTopic = (topic = "") => {
 
 const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
-// ---------------- BRAND / LAYOUT MESSAGE (LOGS + DMs) ----------------
+// ---------------- BRAND IMAGE ----------------
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png";
 
-function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
-  const components = [];
-  if (pingLine) components.push({ type: 10, content: pingLine });
-
-  components.push({
-    type: 17,
-    components: [
-      { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
-      { type: 14, spacing: 2 },
-      { type: 10, content: contentMarkdown },
-      { type: 14, spacing: 2 }
-    ]
-  });
-
-  return {
-    flags: 32768,
-    allowed_mentions: { parse: ["users", "roles"] },
-    components
-  };
-}
-
-// ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS ONLY) ----------------
+// ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS) ----------------
 const STUDIO_REGULATIONS_EMBEDS = [
   {
     image: {
@@ -171,6 +170,51 @@ const STUDIO_REGULATIONS_EMBEDS = [
       "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
   }
 ];
+
+// ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
+const ABOUT_US_EMBEDS = [
+  {
+    image: {
+      url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
+    }
+  },
+  {
+    description:
+      "Welcome to **Nugget Studios** — a commission-based design studio focused on **clean, premium visuals** made for communities, creators, and game brands.\n\n" +
+      "1. **`What We Do`**\n" +
+      "> We create high-impact graphics like banners, Discord assets, uniforms, and polished promotional designs.\n\n" +
+      "2. **`Our Standard`**\n" +
+      "> Every delivery is built with consistency in mind: clean spacing, strong readability, and a professional finish.\n\n" +
+      "3. **`How It Works`**\n" +
+      "> Open a support ticket, share what you need, and we’ll guide you through the process from concept to delivery.\n\n" +
+      "4. **`Communication`**\n" +
+      "> Clear updates, respectful timelines, and organized revisions — so you always know what’s happening.\n\n" +
+      "5. **`Goal`**\n" +
+      "> Make your server or brand look more official, more polished, and more memorable."
+  }
+];
+
+// ---------------- COMPONENT-BASED LAYOUT FOR LOGS/DMs ----------------
+function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
+  const components = [];
+  if (pingLine) components.push({ type: 10, content: pingLine });
+
+  components.push({
+    type: 17,
+    components: [
+      { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+      { type: 14, spacing: 2 },
+      { type: 10, content: contentMarkdown },
+      { type: 14, spacing: 2 }
+    ]
+  });
+
+  return {
+    flags: 32768,
+    allowed_mentions: { parse: ["users", "roles"] },
+    components
+  };
+}
 
 // ---------------- RAW REST SEND HELPERS ----------------
 async function postRaw(client, channelId, body, files = undefined) {
@@ -358,70 +402,42 @@ export async function sendDashboard(client) {
 export async function handleDashboardInteractions(client, interaction) {
   const { dashboard: conf } = readConfig();
 
-  // Dashboard select
+  // Dropdown interactions (Regulations / About)
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
     const selected = interaction.values?.[0];
-    console.log("[DASHBOARD] main select:", selected, "by", interaction.user?.id);
+    console.log("[DASHBOARD] dropdown:", selected, "by", interaction.user?.id);
 
-    // ✅ Studio Regulations (EPHEMERAL EMBED)
     if (selected === "regulations") {
-      try {
-        return await interaction.reply({
-          ephemeral: true,
-          embeds: STUDIO_REGULATIONS_EMBEDS,
-          allowedMentions: { parse: [] }
-        });
-      } catch (err) {
-        console.error("[REGULATIONS] reply failed:", err);
-
-        // If already replied (rare), do an ephemeral followUp
-        try {
-          if (interaction.deferred || interaction.replied) {
-            return await interaction.followUp({
-              ephemeral: true,
-              embeds: STUDIO_REGULATIONS_EMBEDS,
-              allowedMentions: { parse: [] }
-            });
-          }
-        } catch (err2) {
-          console.error("[REGULATIONS] followUp failed:", err2);
-        }
-
-        // last fallback
-        try {
-          return await interaction.reply({
-            ephemeral: true,
-            content: "⚠️ Failed to send Studio Regulations. Please try again."
-          });
-        } catch {}
-        return;
-      }
+      return interaction.reply({
+        ephemeral: true,
+        embeds: STUDIO_REGULATIONS_EMBEDS,
+        allowedMentions: { parse: [] }
+      });
     }
 
-    // Support
-    if (selected === "support") {
-      const select = new StringSelectMenuBuilder()
-        .setCustomId(IDS.ticketTypeSelect)
-        .setPlaceholder("Choose ticket type…")
-        .addOptions(TICKET_TYPES);
-
-      return interaction
-        .reply({
-          content: "Select a ticket type:",
-          components: [new ActionRowBuilder().addComponents(select)],
-          ephemeral: true
-        })
-        .catch(async (e) => {
-          console.error("[SUPPORT] initial reply failed, trying defer/edit:", e);
-          await interaction.deferReply({ ephemeral: true }).catch(() => {});
-          return interaction
-            .editReply({
-              content: "Select a ticket type:",
-              components: [new ActionRowBuilder().addComponents(select)]
-            })
-            .catch((e2) => console.error("[SUPPORT] editReply failed:", e2));
-        });
+    if (selected === "about") {
+      return interaction.reply({
+        ephemeral: true,
+        embeds: ABOUT_US_EMBEDS,
+        allowedMentions: { parse: [] }
+      });
     }
+  }
+
+  // Support button -> ticket type selector (ephemeral)
+  if (interaction.isButton?.() && interaction.customId === IDS.supportButton) {
+    console.log("[DASHBOARD] support button by", interaction.user?.id);
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(IDS.ticketTypeSelect)
+      .setPlaceholder("Choose ticket type…")
+      .addOptions(TICKET_TYPES);
+
+    return interaction.reply({
+      content: "Select a ticket type:",
+      components: [new ActionRowBuilder().addComponents(select)],
+      ephemeral: true
+    });
   }
 
   // Ticket type → modal
