@@ -12,7 +12,7 @@ const client = new Client({
 
 // Toggle this to true only when you want to post the dashboard message.
 // After it posts, set back to false so it doesn't repost on every restart.
-const POST_DASHBOARD_ON_START = false;
+const POST_DASHBOARD_ON_START = true;
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
