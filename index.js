@@ -5,13 +5,14 @@ import { sendDashboard, handleDashboardInteractions } from "./Features/dashboard
 import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
+import registerPaymentModule from "./Features/payment.js";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // required for "-tax 100"
-    GatewayIntentBits.GuildMembers // required for welcome
+    GatewayIntentBits.MessageContent, // required for -tax / -payment
+    GatewayIntentBits.GuildMembers // required for welcome module
   ],
   partials: [Partials.Channel]
 });
@@ -24,9 +25,10 @@ const POST_ORDERHUB_ON_START = true;
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // ✅ Register feature modules (event listeners + slash upserts)
+  // ✅ Register feature modules (listeners + slash upserts)
   registerWelcomeModule(client);
-  registerTaxModule(client);
+  registerTaxModule(client, { prefix: "-" });
+  registerPaymentModule(client, { prefix: "-" });
 
   if (POST_DASHBOARD_ON_START) {
     try {
@@ -49,10 +51,10 @@ client.once("ready", async () => {
 
 client.on("interactionCreate", async (interaction) => {
   try {
-    // Run both handlers (each one ignores interactions it doesn't care about)
+    // Each handler ignores interactions it doesn't care about
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
-    // /tax is handled inside registerTaxModule via its own interactionCreate listener
+    // tax + payment slash commands are handled inside their modules
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
@@ -68,7 +70,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// Basic process guards so Railway logs show what killed it (if anything)
+// ---------- Process guards (Railway-safe) ----------
 process.on("unhandledRejection", (reason) => {
   console.error("❌ Unhandled Rejection:", reason);
 });
