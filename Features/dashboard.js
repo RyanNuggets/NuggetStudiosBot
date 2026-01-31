@@ -14,54 +14,6 @@ import fs from "fs";
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------------- STUDIO REGULATIONS PAYLOAD ----------------
-const STUDIO_REGULATIONS_PAYLOAD = {
-  flags: 32768,
-  components: [
-    {
-      type: 17,
-      components: [
-        {
-          type: 12,
-          items: [
-            {
-              media: {
-                url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
-              }
-            }
-          ]
-        },
-        { type: 14, spacing: 2 },
-        {
-          type: 10,
-          content:
-            "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
-            "1. **`Respect All Members`**\n" +
-            "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
-            "2. **`Spam & Flooding`**\n" +
-            "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
-            "3. **`Proper Channel Usage`**\n" +
-            "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
-            "4. **`Advertising & Promotion`**\n" +
-            "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
-            "5. **`Roblox & Discord Terms of Service`**\n" +
-            "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
-            "6. **`Leaking & Reselling`**\n" +
-            "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
-            "7. **`Staff Authority`**\n" +
-            "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
-            "8. **`Usernames & Avatars`**\n" +
-            "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
-            "9. **`NSFW & Inappropriate Content`**\n" +
-            "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
-            "10. **`Reporting Issues`**\n" +
-            "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
-        }
-      ]
-    }
-  ]
-};
-
 // ---------------- DASHBOARD LAYOUT ----------------
 const DASHBOARD_LAYOUT = {
   flags: 32768,
@@ -163,7 +115,7 @@ const getStaffRoleFromTopic = (topic = "") => {
 
 const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
-// ---------------- COMPONENT-BASED LAYOUT ----------------
+// ---------------- BRAND / LAYOUT MESSAGE (LOGS + DMs) ----------------
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png";
 
@@ -187,6 +139,41 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
     components
   };
 }
+
+// ---------------- STUDIO REGULATIONS (NORMAL EMBEDS) ----------------
+const STUDIO_REGULATIONS_EMBEDS = {
+  embeds: [
+    {
+      image: {
+        url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
+      }
+    },
+    {
+      description:
+        "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
+        "1. **`Respect All Members`**\n" +
+        "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
+        "2. **`Spam & Flooding`**\n" +
+        "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
+        "3. **`Proper Channel Usage`**\n" +
+        "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
+        "4. **`Advertising & Promotion`**\n" +
+        "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
+        "5. **`Roblox & Discord Terms of Service`**\n" +
+        "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
+        "6. **`Leaking & Reselling`**\n" +
+        "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
+        "7. **`Staff Authority`**\n" +
+        "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
+        "8. **`Usernames & Avatars`**\n" +
+        "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
+        "9. **`NSFW & Inappropriate Content`**\n" +
+        "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
+        "10. **`Reporting Issues`**\n" +
+        "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
+    }
+  ]
+};
 
 // ---------------- RAW REST SEND HELPERS ----------------
 async function postRaw(client, channelId, body, files = undefined) {
@@ -377,13 +364,34 @@ export async function handleDashboardInteractions(client, interaction) {
   // Dashboard select
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
     const selected = interaction.values?.[0];
+    console.log("[DASHBOARD] main select:", selected, "by", interaction.user?.id);
 
-    // Studio Regulations (EPHEMERAL + fixed: editReply only takes {components/...}, not flags)
+    // ✅ Studio Regulations (NORMAL EMBED — NOT EPHEMERAL)
     if (selected === "regulations") {
-      await interaction.deferReply({ ephemeral: true }).catch(() => {});
-      return interaction
-        .editReply({ components: STUDIO_REGULATIONS_PAYLOAD.components })
-        .catch(() => {});
+      try {
+        return await interaction.reply({
+          ...STUDIO_REGULATIONS_EMBEDS,
+          allowedMentions: { parse: [] }
+        });
+      } catch (e) {
+        console.error("[REGULATIONS] reply failed:", e);
+        // fallback (in case already replied/deferred)
+        try {
+          if (interaction.deferred || interaction.replied) {
+            return await interaction.followUp({
+              content: "⚠️ Failed to send regulations embed.",
+              ephemeral: true
+            });
+          }
+          return await interaction.reply({
+            content: "⚠️ Failed to send regulations embed.",
+            ephemeral: true
+          });
+        } catch (e2) {
+          console.error("[REGULATIONS] fallback failed:", e2);
+        }
+        return;
+      }
     }
 
     // Support
@@ -399,20 +407,23 @@ export async function handleDashboardInteractions(client, interaction) {
           components: [new ActionRowBuilder().addComponents(select)],
           ephemeral: true
         })
-        .catch(async () => {
+        .catch(async (e) => {
+          console.error("[SUPPORT] initial reply failed, trying defer/edit:", e);
           await interaction.deferReply({ ephemeral: true }).catch(() => {});
           return interaction
             .editReply({
               content: "Select a ticket type:",
               components: [new ActionRowBuilder().addComponents(select)]
             })
-            .catch(() => {});
+            .catch((e2) => console.error("[SUPPORT] editReply failed:", e2));
         });
     }
   }
 
   // Ticket type → modal
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.ticketTypeSelect) {
+    console.log("[TICKET] type selected:", interaction.values?.[0], "by", interaction.user?.id);
+
     const modal = new ModalBuilder()
       .setCustomId(`${IDS.modalBase}:${interaction.values[0]}`)
       .setTitle("Support Enquiry");
@@ -434,6 +445,8 @@ export async function handleDashboardInteractions(client, interaction) {
     const ticketTypeValue = interaction.customId.split(":")[1];
     const enquiry = interaction.fields.getTextInputValue(IDS.modalInput);
 
+    console.log("[TICKET] modal submit:", ticketTypeValue, "by", interaction.user?.id);
+
     const guild = interaction.guild;
     if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
@@ -448,7 +461,7 @@ export async function handleDashboardInteractions(client, interaction) {
     }
 
     // one ticket per type per user
-    await guild.channels.fetch().catch(() => {});
+    await guild.channels.fetch().catch((e) => console.error("[TICKET] channels.fetch failed:", e));
     const tag = ticketTopicTag(interaction.user.id, ticketTypeValue);
 
     const existing = guild.channels.cache.find((ch) => {
@@ -579,7 +592,10 @@ export async function handleDashboardInteractions(client, interaction) {
           AttachFiles: true,
           EmbedLinks: true
         });
-        return interaction.reply({ content: `Added <@${targetId}> to this ticket.`, ephemeral: true });
+        return interaction.reply({
+          content: `Added <@${targetId}> to this ticket.`,
+          ephemeral: true
+        });
       }
     } catch (e) {
       console.error("Toggle user failed:", e);
