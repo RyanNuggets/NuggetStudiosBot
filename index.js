@@ -16,7 +16,7 @@ const client = new Client({
 // Toggle these to true only when you want to post the messages once.
 // After they post, set back to false so they don't repost on every restart.
 const POST_DASHBOARD_ON_START = false;
-const POST_ORDERHUB_ON_START = false;
+const POST_ORDERHUB_ON_START = true;
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
