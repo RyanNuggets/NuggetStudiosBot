@@ -321,8 +321,7 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
             type: 10,
             content:
               `## **Order Request Received**\n` +
-              `> Thanks for choosing **Nugget Studios**. Your order request has been received and is now in our queue.\n` +
-              `> Please provide all relevant details (references, theme, text, size, deadline). Avoid tagging staff directly.\n\n` +
+              `> Thanks for choosing **Nugget Studios**. Your order request has been received and is now in our queue. Please provide all relevant details (references, theme, text, size, deadline). Avoid tagging staff directly.\n\n` +
               `### **Order Information:**\n` +
               `> *User:* <@${userId}>\n` +
               `> *Order Type:* **${orderTypeLabel}**\n` +
