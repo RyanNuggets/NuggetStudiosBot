@@ -12,6 +12,17 @@
     "ticketLogsChannelId": "1467066668814696531"
   },
 
+"orderhub": {
+  "orderHubChannelId": "1467239168227676426",
+  "staffRoleId": "1467239276994625607",
+
+  "categoryFiatId": "1467239466728161628",
+  "categoryRobuxId": "1467239518032760935",
+
+  "orderChannelNameFormat": "order-{username}",
+  "orderLogsChannelId": "1467239248724754472"
+},
+  
   "welcome": {
     "enabled": true,
     "channelId": "1466860445653795007"
