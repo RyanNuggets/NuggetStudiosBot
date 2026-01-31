@@ -35,7 +35,7 @@ const DASHBOARD_LAYOUT = {
         {
           type: 10,
           content:
-            "Nugget Studios is a commission-based design shop focused on clean, high-impact graphics for creators, communities, and game brands — from banners and Discord panels to uniforms, embeds, and polished promo visuals."
+            "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last. "
         },
         { type: 14 },
         {
