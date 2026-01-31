@@ -7,7 +7,7 @@
     "ticketCategoryId": "1467054322297737309",
     "supportRoleId": "1467054430212984832",
 
-    "ticketChannelNameFormat": "ticket-{username}"
+    "ticketChannelNameFormat": "ticket-{username}",
     "ticketLogsChannelId": "1467066668814696531"
   }
 }
