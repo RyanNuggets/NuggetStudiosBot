@@ -1,71 +1,41 @@
-// /Features/payment.js
+// /Features/payment.js  (T-SHIRT / CATALOG ITEM VERSION)
+import fs from "fs";
+import noblox from "noblox.js";
 import { Routes } from "discord-api-types/v10";
 import { ApplicationCommandOptionType } from "discord.js";
-import noblox from "noblox.js";
-import fs from "fs";
 
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
-const PREFIX_DEFAULT = "-";
 
 let loginPromise = null;
 
 function normalizeCookie(raw) {
   if (!raw) return null;
-
   let c = String(raw);
-
-  // Strip accidental ".ROBLOSECURITY=" prefix
   c = c.replace(/^\.ROBLOSECURITY=/i, "");
-
-  // Trim and strip wrapping quotes
   c = c.trim().replace(/^["']|["']$/g, "").trim();
-
-  // Remove newlines just in case
   c = c.replace(/[\r\n]+/g, "");
-
   return c;
 }
 
 async function ensureRobloxLogin() {
   if (loginPromise) return loginPromise;
 
-  const raw = process.env.ROBLOX_COOKIE;
-  const cookie = normalizeCookie(raw);
-
-  // ---- SAFE DEBUG ----
-  const previewStart = (cookie ?? "").slice(0, 18);
-  const previewEnd = (cookie ?? "").slice(-18);
-  console.log("[PAYMENT] cookie type:", typeof raw);
-  console.log("[PAYMENT] cookie length:", cookie?.length ?? 0);
-  console.log("[PAYMENT] cookie starts:", JSON.stringify(previewStart));
-  console.log("[PAYMENT] cookie ends:", JSON.stringify(previewEnd));
-  console.log("[PAYMENT] contains WARNING:", (cookie ?? "").includes("WARNING"));
-  console.log("[PAYMENT] contains newline:", /[\r\n]/.test(cookie ?? ""));
-  console.log("[PAYMENT] contains quotes at ends:", /^["']|["']$/.test(cookie ?? ""));
-  // ---------------------
-
+  const cookie = normalizeCookie(process.env.ROBLOX_COOKIE);
   if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var.");
   if (!cookie.includes("WARNING")) {
-    throw new Error(
-      "ROBLOX_COOKIE does not include WARNING text. Copy the full .ROBLOSECURITY value from DevTools."
-    );
+    throw new Error("ROBLOX_COOKIE missing WARNING text. Copy full .ROBLOSECURITY value.");
   }
 
   loginPromise = (async () => {
-    // Important: setCookie must be awaited before any authed calls.
-    const currentUser = await noblox.setCookie(cookie);
-
-    // Validate with a real authed endpoint
+    await noblox.setCookie(cookie);
     const me = await noblox.getCurrentUser();
-    console.log("[PAYMENT] Logged in as:", me?.UserName, me?.UserID);
-
-    return currentUser;
+    console.log(`✅ [PAYMENT] Roblox logged in as ${me?.UserName ?? "Unknown"} (${me?.UserID ?? "?"})`);
+    return me;
   })();
 
   return loginPromise;
 }
 
-// ---------- Helpers ----------
 function hasRole(member, roleId) {
   if (!roleId) return false;
   const roles = member?.roles?.cache ?? member?.roles;
@@ -87,7 +57,23 @@ function fmt(n) {
   return Number(n).toLocaleString("en-US");
 }
 
-// Upsert ONE global slash command safely (doesn't overwrite other commands)
+function discordTs(unixOrDate) {
+  const unix =
+    typeof unixOrDate === "number"
+      ? unixOrDate
+      : Math.floor(new Date(unixOrDate).getTime() / 1000);
+  if (!Number.isFinite(unix)) return "N/A";
+  return `<t:${unix}:R>`;
+}
+
+function nowTs() {
+  return `<t:${Math.floor(Date.now() / 1000)}:R>`;
+}
+
+async function postRaw(client, channelId, body) {
+  return client.rest.post(Routes.channelMessages(channelId), { body });
+}
+
 async function upsertGlobalCommand(client, command) {
   const appId = client.application?.id;
   if (!appId) throw new Error("Missing application id.");
@@ -104,58 +90,9 @@ async function upsertGlobalCommand(client, command) {
   }
 }
 
-// ---------- Slash registration ----------
-async function registerPaymentSlash(client) {
-  const cmd = {
-    name: "payment",
-    description: "Change the price of the configured shirt asset (Robux).",
-    options: [
-      {
-        name: "price",
-        description: "New price in Robux",
-        type: ApplicationCommandOptionType.Integer,
-        required: true,
-        min_value: 0
-      }
-    ]
-  };
-
-  const result = await upsertGlobalCommand(client, cmd);
-  console.log(`✅ [PAYMENT] Global slash command ${result}: /payment`);
-}
-
-// ---------- Core action ----------
-async function changeShirtPrice({ newPrice }) {
-  const conf = readConfig();
-  const payment = conf.payment;
-
-  if (!payment?.assetId) throw new Error("Missing config.payment.assetId");
-  const assetId = Number(payment.assetId);
-
-  await ensureRobloxLogin();
-
-  // name/desc required for configureItem
-  const infoBefore = await noblox.getProductInfo(assetId);
-  const name = infoBefore?.Name ?? "Untitled";
-  const description = infoBefore?.Description ?? "";
-
-  await noblox.configureItem(assetId, name, description, undefined, newPrice, undefined);
-
-  const infoAfter = await noblox.getProductInfo(assetId);
-
-  return {
-    assetId,
-    name,
-    before: infoBefore?.PriceInRobux ?? null,
-    after: infoAfter?.PriceInRobux ?? null
-  };
-}
-
-// ---------- Logging ----------
-async function logChange(client, { userId, assetId, name, before, after }) {
-  const conf = readConfig();
-  const chId = conf?.payment?.logChannelId;
-  if (!chId) return;
+async function logPaymentChange(client, conf, { userId, assetId, name, before, after, method }) {
+  const logChannelId = conf.payment?.logChannelId;
+  if (!logChannelId) return;
 
   const payload = {
     embeds: [
@@ -164,7 +101,8 @@ async function logChange(client, { userId, assetId, name, before, after }) {
         description:
           `**Asset:** ${name}\n` +
           `**Asset ID:** \`${assetId}\`\n` +
-          `**Changed by:** <@${userId}>`,
+          `**Changed by:** <@${userId}>\n` +
+          `**Method:** ${method}`,
         fields: [
           { name: "Old Price", value: `> ${fmt(before)}`, inline: true },
           { name: "New Price", value: `> ${fmt(after)}`, inline: true }
@@ -173,169 +111,320 @@ async function logChange(client, { userId, assetId, name, before, after }) {
     ]
   };
 
-  await client.rest.post(Routes.channelMessages(chId), { body: payload }).catch(() => {});
+  await postRaw(client, logChannelId, payload).catch(() => {});
 }
 
-// ---------- Slash handler ----------
+/**
+ * Change catalog item price (shirt) for group-owned asset.
+ * configureItem(assetId, name, description, enableComments, sellForRobux, genreSelection)
+ */
+async function changeShirtPrice(assetId, newPrice) {
+  await ensureRobloxLogin();
+
+  const infoBefore = await noblox.getProductInfo(Number(assetId));
+  const name = infoBefore?.Name ?? "Shirt";
+  const description = infoBefore?.Description ?? "";
+  const before = infoBefore?.PriceInRobux ?? null;
+  const onSaleBefore = Boolean(infoBefore?.IsForSale);
+
+  await noblox.configureItem(Number(assetId), name, description, undefined, Number(newPrice), undefined);
+
+  const infoAfter = await noblox.getProductInfo(Number(assetId));
+  return {
+    name,
+    beforePrice: before,
+    afterPrice: infoAfter?.PriceInRobux ?? null,
+    onSale: Boolean(infoAfter?.IsForSale ?? onSaleBefore)
+  };
+}
+
+/**
+ * Recent transactions for GROUP sales:
+ * We pull sales transactions, filter by assetId, take 3 latest.
+ * NOTE: transaction shapes can vary slightly; we defensively read fields.
+ */
+async function getRecentAssetSales(groupId, assetId, limit = 50) {
+  await ensureRobloxLogin();
+
+  // noblox has group transactions helpers; function names differ by version.
+  // We'll try a couple patterns to stay compatible.
+  let tx = null;
+
+  // Pattern A: getGroupTransactions(groupId, transactionType, limit, cursor)
+  try {
+    tx = await noblox.getGroupTransactions(Number(groupId), "Sale", { limit });
+  } catch {}
+
+  // Pattern B: getGroupTransactions(groupId, transactionType, limit)
+  if (!tx) {
+    try {
+      tx = await noblox.getGroupTransactions(Number(groupId), "Sale", limit);
+    } catch {}
+  }
+
+  // Normalize array
+  const data = Array.isArray(tx) ? tx : tx?.data ?? tx?.Data ?? tx?.transactions ?? [];
+
+  // Filter by assetId
+  const filtered = data.filter((t) => {
+    const details = t.details ?? t.Details ?? {};
+    const aId =
+      details?.assetId ??
+      details?.AssetId ??
+      details?.asset?.id ??
+      t.assetId ??
+      t.AssetId ??
+      null;
+    return String(aId) === String(assetId);
+  });
+
+  // Sort newest first (best-effort)
+  filtered.sort((a, b) => {
+    const ad = new Date(a.created ?? a.Created ?? a.createdAt ?? a.date ?? 0).getTime();
+    const bd = new Date(b.created ?? b.Created ?? b.createdAt ?? b.date ?? 0).getTime();
+    return bd - ad;
+  });
+
+  const top = filtered.slice(0, 3);
+
+  // Map into a consistent shape
+  const out = [];
+  for (const t of top) {
+    const details = t.details ?? t.Details ?? {};
+    const buyerId =
+      t.agent?.id ??
+      t.agentId ??
+      t.AgentId ??
+      details?.buyerId ??
+      details?.BuyerId ??
+      details?.agentId ??
+      null;
+
+    const amount =
+      details?.price ??
+      details?.Price ??
+      details?.robux ??
+      details?.Robux ??
+      t.amount ??
+      t.Amount ??
+      null;
+
+    const created =
+      t.created ?? t.Created ?? t.createdAt ?? t.date ?? details?.created ?? details?.Created ?? null;
+
+    let username = t.agent?.name ?? t.agentName ?? null;
+    if (!username && buyerId) {
+      try {
+        username = await noblox.getUsernameFromId(Number(buyerId));
+      } catch {
+        username = "User";
+      }
+    }
+
+    out.push({
+      userId: buyerId ? Number(buyerId) : null,
+      username: username ?? "User",
+      amount: amount ? Number(amount) : null,
+      purchased: created ? discordTs(created) : "N/A"
+    });
+  }
+
+  // Pad to 3 entries
+  while (out.length < 3) out.push(null);
+  return out;
+}
+
+function buildPaymentEmbed({ currentPrice, onSale, lastUpdated, transactions }) {
+  const lines = [];
+
+  lines.push(`## Gamepass History`);
+  lines.push(`**Current Price:** ${fmt(currentPrice)}`);
+  lines.push(`**On Sale:** ${onSale ? "Yes" : "No"}`);
+  lines.push(`**Last Updated:** ${lastUpdated}`);
+  lines.push(``);
+  lines.push(`## Recent Transactions`);
+
+  for (let i = 0; i < 3; i++) {
+    const t = transactions?.[i] ?? null;
+    if (!t) {
+      lines.push(`**\`${i + 1}\`** *(No data)*`);
+      lines.push(`> - **Amount:** N/A`);
+      lines.push(`> - **Purchased:** N/A`);
+      lines.push(``);
+      continue;
+    }
+
+    const userLine = t.userId
+      ? `[${t.username}](https://www.roblox.com/users/${t.userId}/profile)`
+      : `${t.username}`;
+
+    lines.push(`**\`${i + 1}\`** ${userLine}`);
+    lines.push(`> - **Amount:** ${fmt(t.amount)}`);
+    lines.push(`> - **Purchased:** ${t.purchased}`);
+    lines.push(``);
+  }
+
+  return {
+    embeds: [{ description: lines.join("\n") }],
+    components: []
+  };
+}
+
+// --- Slash ---
 async function handlePaymentSlash(client, interaction) {
   if (!interaction.isChatInputCommand?.()) return false;
   if (interaction.commandName !== "payment") return false;
 
   const conf = readConfig();
-  const payment = conf.payment;
+  const pay = conf.payment ?? {};
 
-  if (!payment?.allowedRoleId) {
+  if (!pay.allowedRoleId) {
+    return interaction.reply({ content: "Payment not configured (missing allowedRoleId).", ephemeral: true });
+  }
+  if (!hasRole(interaction.member, pay.allowedRoleId)) {
+    return interaction.reply({ content: "❌ You don’t have permission to use this.", ephemeral: true });
+  }
+
+  const assetId = pay.assetId;
+  const groupId = pay.groupId;
+
+  if (!assetId || !groupId) {
     return interaction.reply({
-      content: "Payment command not configured (missing allowedRoleId).",
+      content: "Payment not configured (missing assetId or groupId).",
       ephemeral: true
     });
   }
 
-  if (!hasRole(interaction.member, payment.allowedRoleId)) {
-    return interaction.reply({ content: "You don’t have permission to use this command.", ephemeral: true });
-  }
+  const maxPrice = Number(pay.maxPrice ?? 100000);
+  const newPrice = parsePrice(interaction.options.getInteger("price", true));
 
-  const priceRaw = interaction.options.getInteger("price", true);
-  const newPrice = parsePrice(priceRaw);
-  if (newPrice === null) {
-    return interaction.reply({ content: "Invalid price.", ephemeral: true });
+  if (newPrice === null || newPrice > maxPrice) {
+    return interaction.reply({ content: `Invalid price. Max is ${fmt(maxPrice)}.`, ephemeral: true });
   }
 
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   try {
-    const res = await changeShirtPrice({ newPrice });
+    const res = await changeShirtPrice(assetId, newPrice);
 
-    await logChange(client, {
+    // Pull recent transactions AFTER updating
+    const tx = await getRecentAssetSales(groupId, assetId, 50);
+
+    await logPaymentChange(client, conf, {
       userId: interaction.user.id,
-      assetId: res.assetId,
+      assetId,
       name: res.name,
-      before: res.before,
-      after: res.after
+      before: res.beforePrice,
+      after: res.afterPrice,
+      method: "slash (/payment)"
     });
 
-    return interaction.editReply({
-      embeds: [
-        {
-          description:
-            `✅ **Price Updated**\n\n` +
-            `**Asset:** ${res.name}\n` +
-            `**Old:** ${fmt(res.before)}\n` +
-            `**New:** ${fmt(res.after)}`
-        }
-      ]
-    });
+    return interaction.editReply(
+      buildPaymentEmbed({
+        currentPrice: res.afterPrice,
+        onSale: res.onSale,
+        lastUpdated: nowTs(),
+        transactions: tx
+      })
+    );
   } catch (e) {
     console.error("❌ [PAYMENT] slash error:", e);
-    return interaction.editReply({ content: `Failed to update price. (${e?.message ?? "Unknown error"})` });
+    return interaction.editReply({ content: `Failed. (${e?.message ?? "Unknown error"})` });
   }
 }
 
-// ---------- Prefix handlers ----------
-async function handleRbxTestPrefix(message, prefix = PREFIX_DEFAULT) {
-  const content = String(message.content ?? "").trim().toLowerCase();
-  if (!content.startsWith(`${prefix}rbxtest`)) return false;
-
+// --- Prefix (-payment 100) ---
+async function handlePaymentPrefix(client, message) {
   const conf = readConfig();
-  const payment = conf.payment;
+  const pay = conf.payment ?? {};
+  const prefix = String(pay.prefix ?? "-");
 
-  if (!payment?.allowedRoleId) {
-    await message.reply("Payment config missing allowedRoleId.").catch(() => {});
-    return true;
-  }
-  if (!hasRole(message.member, payment.allowedRoleId)) {
-    await message.reply("You don’t have permission to use this command.").catch(() => {});
-    return true;
-  }
+  if (!message.guild || message.author.bot) return false;
 
-  const thinking = await message.reply("Testing Roblox login…").catch(() => null);
-
-  try {
-    await ensureRobloxLogin();
-    const me = await noblox.getCurrentUser();
-    const msg = `✅ Roblox login OK: **${me?.UserName ?? "Unknown"}** (\`${me?.UserID ?? "?"}\`)`;
-    if (thinking) await thinking.edit(msg).catch(() => {});
-    else await message.reply(msg).catch(() => {});
-  } catch (e) {
-    console.error("❌ [PAYMENT] rbxtest error:", e);
-    const msg =
-      `❌ Roblox login failed.\n` +
-      `Reason: **${e?.message ?? "Unknown error"}**\n\n` +
-      `If cookie looks correct, Roblox likely invalidated it. Re-copy a fresh .ROBLOSECURITY from DevTools → Application → Cookies → www.roblox.com.`;
-    if (thinking) await thinking.edit(msg).catch(() => {});
-    else await message.reply(msg).catch(() => {});
-  }
-
-  return true;
-}
-
-async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
   const content = String(message.content ?? "").trim();
   if (!content.toLowerCase().startsWith(`${prefix}payment`)) return false;
 
-  const conf = readConfig();
-  const payment = conf.payment;
-
-  if (!payment?.allowedRoleId) {
-    await message.reply("Payment command not configured (missing allowedRoleId).").catch(() => {});
+  if (!pay.allowedRoleId) {
+    await message.reply("Payment not configured (missing allowedRoleId).").catch(() => {});
+    return true;
+  }
+  if (!hasRole(message.member, pay.allowedRoleId)) {
+    await message.reply("❌ You don’t have permission to use this.").catch(() => {});
     return true;
   }
 
-  if (!hasRole(message.member, payment.allowedRoleId)) {
-    await message.reply("You don’t have permission to use this command.").catch(() => {});
+  const assetId = pay.assetId;
+  const groupId = pay.groupId;
+  if (!assetId || !groupId) {
+    await message.reply("Payment not configured (missing assetId or groupId).").catch(() => {});
     return true;
   }
 
   const parts = content.split(/\s+/);
   const newPrice = parsePrice(parts[1]);
+  const maxPrice = Number(pay.maxPrice ?? 100000);
 
-  if (newPrice === null) {
-    await message.reply(`Usage: \`${prefix}payment 100\``).catch(() => {});
+  if (newPrice === null || newPrice > maxPrice) {
+    await message.reply(`Usage: \`${prefix}payment 100\` (max ${fmt(maxPrice)})`).catch(() => {});
     return true;
   }
 
-  const thinking = await message.reply("Updating price…").catch(() => null);
+  // prefix can't be ephemeral; delete + DM
+  await message.delete().catch(() => {});
 
   try {
-    const res = await changeShirtPrice({ newPrice });
+    const res = await changeShirtPrice(assetId, newPrice);
+    const tx = await getRecentAssetSales(groupId, assetId, 50);
 
-    await logChange(client, {
+    await logPaymentChange(client, conf, {
       userId: message.author.id,
-      assetId: res.assetId,
+      assetId,
       name: res.name,
-      before: res.before,
-      after: res.after
+      before: res.beforePrice,
+      after: res.afterPrice,
+      method: `prefix (${prefix}payment)`
     });
 
-    const donePayload = {
-      embeds: [
-        {
-          description:
-            `✅ **Price Updated**\n\n` +
-            `**Asset:** ${res.name}\n` +
-            `**Old:** ${fmt(res.before)}\n` +
-            `**New:** ${fmt(res.after)}`
-        }
-      ]
-    };
+    const payload = buildPaymentEmbed({
+      currentPrice: res.afterPrice,
+      onSale: res.onSale,
+      lastUpdated: nowTs(),
+      transactions: tx
+    });
 
-    if (thinking) await thinking.edit(donePayload).catch(() => {});
-    else await message.reply(donePayload).catch(() => {});
+    await message.author.send(payload).catch(async () => {
+      const warn = await message.channel
+        .send({ content: `<@${message.author.id}> I couldn’t DM you. Enable DMs from this server.` })
+        .catch(() => null);
+      if (warn) setTimeout(() => warn.delete().catch(() => {}), 6000);
+    });
   } catch (e) {
     console.error("❌ [PAYMENT] prefix error:", e);
-    const msg = `Failed to update price. (${e?.message ?? "Unknown error"})`;
-    if (thinking) await thinking.edit(msg).catch(() => {});
-    else await message.reply(msg).catch(() => {});
+    await message.author.send(`Failed. (${e?.message ?? "Unknown error"})`).catch(() => {});
   }
 
   return true;
 }
 
-// ---------- Export registrar ----------
-export default function registerPaymentModule(client, { prefix = PREFIX_DEFAULT } = {}) {
+export default function registerPaymentModule(client) {
   client.once("ready", async () => {
     try {
-      await registerPaymentSlash(client);
+      const cmd = {
+        name: "payment",
+        description: "Change the configured shirt price (Robux).",
+        options: [
+          {
+            name: "price",
+            description: "New price in Robux",
+            type: ApplicationCommandOptionType.Integer,
+            required: true,
+            min_value: 0
+          }
+        ]
+      };
+
+      const result = await upsertGlobalCommand(client, cmd);
+      console.log(`✅ [PAYMENT] Global slash command ${result}: /payment`);
       console.log("✅ Payment module registered");
     } catch (e) {
       console.error("❌ [PAYMENT] register error:", e);
@@ -352,12 +441,7 @@ export default function registerPaymentModule(client, { prefix = PREFIX_DEFAULT 
 
   client.on("messageCreate", async (message) => {
     try {
-      // extra debug command:
-      // -rbxtest  -> confirms cookie works server-side
-      if (await handleRbxTestPrefix(message, prefix)) return;
-
-      // -payment <price>
-      await handlePaymentPrefix(client, message, prefix);
+      await handlePaymentPrefix(client, message);
     } catch (e) {
       console.error("❌ [PAYMENT] messageCreate error:", e);
     }
