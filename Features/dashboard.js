@@ -75,8 +75,8 @@ const IDS = {
   ticketActionsSelect: "ticket_actions_select",
   ticketUserToggleSelect: "ticket_user_toggle_select",
 
-  // Rating in DMs (buttons)
-  ratePrefix: "ticket_rate" // customId: ticket_rate:<ticketId>:<openerId>:<handlerId>:<rating>
+  // rating buttons in DMs
+  ratePrefix: "ticket_rate" // ticket_rate:<ticketId>:<openerId>:<handlerId>:<rating>
 };
 
 // ---------------- HELPERS ----------------
@@ -94,41 +94,97 @@ const isSupport = (interaction, supportRoleId) => {
   return roles?.has ? roles.has(supportRoleId) : Array.isArray(roles) ? roles.includes(supportRoleId) : false;
 };
 
-// Hidden tag stored in channel topic to prevent duplicates per type
+// Topic tags
 const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
-
-// Claim tag stored in channel topic (reliable)
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
 const hasClaimTag = (topic = "") => topic.includes("ns_claimed:");
 const getClaimedBy = (topic = "") => {
   const m = topic.match(/ns_claimed:(\d{5,})/);
   return m ? m[1] : null;
 };
-
-// Parse opener + ticket type from topic
 const getTicketInfoFromTopic = (topic = "") => {
   const m = topic.match(/ns_ticket:(\d{5,}):([a-z0-9_-]+)/i);
   if (!m) return { openerId: null, ticketTypeValue: null };
   return { openerId: m[1], ticketTypeValue: m[2] };
 };
+const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
-const appendTopicTag = (topic = "", tag = "") => {
-  const next = (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
-  return next;
-};
+// ---------------- COMPONENT-BASED "EMBED" BUILDERS ----------------
+const BRAND_IMAGE =
+  "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png";
 
-// Log helper (sends to log channel if configured)
-async function logTicket(client, conf, payload) {
-  const logChannelId = conf.ticketLogsChannelId;
-  if (!logChannelId) return;
+function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
+  // Component-based layout: optional ping line + layout container (type 17)
+  const components = [];
+
+  if (pingLine) {
+    components.push({ type: 10, content: pingLine });
+  }
+
+  components.push({
+    type: 17,
+    components: [
+      {
+        type: 12,
+        items: [{ media: { url: BRAND_IMAGE } }]
+      },
+      { type: 14, spacing: 2 },
+      { type: 10, content: contentMarkdown },
+      { type: 14, spacing: 2 }
+    ]
+  });
+
+  return {
+    flags: 32768,
+    allowed_mentions: { parse: ["users", "roles"] },
+    components
+  };
+}
+
+function ratingRow(ticketId, openerId, handlerId) {
+  const row = new ActionRowBuilder();
+  for (let i = 1; i <= 5; i++) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
+        .setLabel(String(i))
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+  return row;
+}
+
+// ---------------- RAW MESSAGE SENDING HELPERS ----------------
+async function postRaw(client, channelId, body, files = undefined) {
+  return client.rest.post(Routes.channelMessages(channelId), {
+    body,
+    ...(files ? { files } : {})
+  });
+}
+
+async function getDmChannelId(client, userId) {
+  const dm = await client.rest.post(Routes.userChannels(), {
+    body: { recipient_id: userId }
+  });
+  return dm.id;
+}
+
+async function postRawDM(client, userId, body, files = undefined) {
+  const dmId = await getDmChannelId(client, userId);
+  return postRaw(client, dmId, body, files);
+}
+
+async function logTicket(client, conf, body, files = undefined) {
+  const logId = conf.ticketLogsChannelId;
+  if (!logId) return;
   try {
-    await client.rest.post(Routes.channelMessages(logChannelId), { body: payload });
+    await postRaw(client, logId, body, files);
   } catch {
-    // ignore logging failures so tickets still work
+    // don't break tickets if logging fails
   }
 }
 
-// Fetch messages and create transcript string
+// ---------------- TRANSCRIPT BUILDER ----------------
 async function buildTranscript(channel, maxMessages = 2000) {
   const lines = [];
   lines.push(`Ticket Transcript`);
@@ -137,21 +193,21 @@ async function buildTranscript(channel, maxMessages = 2000) {
   lines.push(`Topic: ${channel.topic ?? ""}`);
   lines.push(`----------------------------------------\n`);
 
-  // Fetch in pages of 100 (oldest -> newest after reverse at end)
   let lastId = undefined;
   const collected = [];
 
   while (collected.length < maxMessages) {
-    const batch = await channel.messages.fetch({ limit: 100, ...(lastId ? { before: lastId } : {}) });
+    const batch = await channel.messages.fetch({
+      limit: 100,
+      ...(lastId ? { before: lastId } : {})
+    });
     if (!batch || batch.size === 0) break;
 
     collected.push(...batch.values());
     lastId = batch.last().id;
-
     if (batch.size < 100) break;
   }
 
-  // Oldest -> newest
   collected.reverse();
 
   for (const msg of collected) {
@@ -168,30 +224,14 @@ async function buildTranscript(channel, maxMessages = 2000) {
       }
     }
 
-    if (msg.embeds?.length) {
-      lines.push(`(embeds) ${msg.embeds.length} embed(s)`);
-    }
-
-    lines.push(""); // blank line between messages
+    if (msg.embeds?.length) lines.push(`(embeds) ${msg.embeds.length} embed(s)`);
+    lines.push("");
   }
 
   return lines.join("\n");
 }
 
-function ratingButtons(ticketId, openerId, handlerId) {
-  const row = new ActionRowBuilder();
-  for (let i = 1; i <= 5; i++) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
-        .setLabel(String(i))
-        .setStyle(ButtonStyle.Secondary)
-    );
-  }
-  return row;
-}
-
-// ---------------- BUILD TICKET MESSAGE ----------------
+// ---------------- BUILD TICKET OPEN MESSAGE ----------------
 function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquiry }) {
   const typeLabel = ticketTypeLabel(ticketTypeValue);
 
@@ -211,7 +251,7 @@ function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquir
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png"
+                  url: BRAND_IMAGE
                 }
               }
             ]
@@ -254,10 +294,7 @@ function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquir
 export async function sendDashboard(client) {
   const conf = readConfig().dashboard;
 
-  await client.rest.post(Routes.channelMessages(conf.dashboardChannelId), {
-    body: DASHBOARD_LAYOUT
-  });
-
+  await postRaw(client, conf.dashboardChannelId, DASHBOARD_LAYOUT);
   console.log("✅ Dashboard sent");
 }
 
@@ -265,7 +302,7 @@ export async function sendDashboard(client) {
 export async function handleDashboardInteractions(client, interaction) {
   const { dashboard: conf } = readConfig();
 
-  // ---------------- Rating buttons (DM) ----------------
+  // ---------------- RATING (buttons from DM) ----------------
   if (interaction.isButton && interaction.isButton() && interaction.customId.startsWith(IDS.ratePrefix + ":")) {
     const parts = interaction.customId.split(":");
     const ticketId = parts[1];
@@ -273,32 +310,39 @@ export async function handleDashboardInteractions(client, interaction) {
     const handlerId = parts[3];
     const rating = parts[4];
 
-    // Only the ticket opener can rate
+    // only opener can rate
     if (interaction.user.id !== openerId) {
       return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
     }
 
-    // Log rating
-    await logTicket(client, conf, {
-      content:
-        `⭐ **Ticket Rated**\n` +
-        `• Ticket: \`${ticketId}\`\n` +
-        `• Opener: <@${openerId}>\n` +
-        `• Handler: ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
-        `• Rating: **${rating}/5**`
-    });
+    // log rating (component-based)
+    const ratingLog = layoutMessage(
+      `## ⭐ **Ticket Rated**\n` +
+        `> **Ticket:** \`${ticketId}\`\n` +
+        `> **Opener:** <@${openerId}>\n` +
+        `> **Handler:** ${handlerId && handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n` +
+        `> **Rating:** **${rating}/5**`
+    );
 
-    // Disable buttons after rating
+    await logTicket(client, conf, ratingLog);
+
+    // disable buttons after rating
     try {
       const disabledRow = new ActionRowBuilder().addComponents(
         interaction.message.components[0].components.map((b) => ButtonBuilder.from(b).setDisabled(true))
       );
-      await interaction.update({ content: `Thanks! You rated this ticket **${rating}/5**.`, components: [disabledRow] });
+      await interaction.update({
+        content: "", // leave empty because we are using layout components
+        components: [
+          // keep it component-based: show a layout confirmation, plus disabled buttons row
+          ...layoutMessage(`## ✅ **Thank you!**\n> You rated this ticket **${rating}/5**.`).components,
+          disabledRow
+        ]
+      });
     } catch {
       // fallback
       return interaction.reply({ content: `Thanks! You rated this ticket **${rating}/5**.`, ephemeral: true });
     }
-
     return;
   }
 
@@ -342,7 +386,7 @@ export async function handleDashboardInteractions(client, interaction) {
     const guild = interaction.guild;
     if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
-    // ✅ Only one ticket per type per user
+    // only one ticket per type per user
     await guild.channels.fetch().catch(() => {});
     const tag = ticketTopicTag(interaction.user.id, ticketTypeValue);
 
@@ -370,7 +414,7 @@ export async function handleDashboardInteractions(client, interaction) {
       name: channelName,
       type: ChannelType.GuildText,
       parent: conf.ticketCategoryId,
-      topic: tag, // hidden marker
+      topic: tag,
       permissionOverwrites: [
         { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
@@ -395,24 +439,26 @@ export async function handleDashboardInteractions(client, interaction) {
       ]
     });
 
-    await client.rest.post(Routes.channelMessages(channel.id), {
-      body: buildTicketOpenPayload({
+    await postRaw(
+      client,
+      channel.id,
+      buildTicketOpenPayload({
         userId: interaction.user.id,
         supportRoleId: conf.supportRoleId,
         ticketTypeValue,
         enquiry
       })
-    });
+    );
 
-    // ✅ Log opened
-    await logTicket(client, conf, {
-      content:
-        `🟢 **Ticket Opened**\n` +
-        `• Ticket: <#${channel.id}> (\`${channel.id}\`)\n` +
-        `• Opener: <@${interaction.user.id}>\n` +
-        `• Type: **${ticketTypeLabel(ticketTypeValue)}**\n` +
-        `• Enquiry: ${enquiry.length > 200 ? enquiry.slice(0, 200) + "…" : enquiry}`
-    });
+    // LOG: opened (component-based)
+    const openedLog = layoutMessage(
+      `## 🟢 **Ticket Opened**\n` +
+        `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+        `> **Opener:** <@${interaction.user.id}>\n` +
+        `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**\n` +
+        `> **Enquiry:** ${enquiry.length > 250 ? enquiry.slice(0, 250) + "…" : enquiry}`
+    );
+    await logTicket(client, conf, openedLog);
 
     return interaction.reply({
       content: `You have successfully created a ticket. View your ticket ⁠<#${channel.id}>.`,
@@ -420,18 +466,10 @@ export async function handleDashboardInteractions(client, interaction) {
     });
   }
 
-  // ---------------- ADD/REMOVE USER picker submit ----------------
-  if (
-    interaction.isUserSelectMenu &&
-    interaction.isUserSelectMenu() &&
-    interaction.customId === IDS.ticketUserToggleSelect
-  ) {
-    // only support can use
+  // Add/Remove user (picker submit)
+  if (interaction.isUserSelectMenu && interaction.isUserSelectMenu() && interaction.customId === IDS.ticketUserToggleSelect) {
     if (!isSupport(interaction, conf.supportRoleId)) {
-      return interaction.reply({
-        content: "Only the support team can manage ticket users.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "Only the support team can manage ticket users.", ephemeral: true });
     }
 
     const channel = interaction.channel;
@@ -440,7 +478,7 @@ export async function handleDashboardInteractions(client, interaction) {
     const targetId = interaction.values?.[0];
     if (!targetId) return interaction.reply({ content: "No user selected.", ephemeral: true });
 
-    // prevent staff adding/removing staff
+    // staff can't add/remove staff
     const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
     if (targetMember && targetMember.roles.cache.has(conf.supportRoleId)) {
       return interaction.reply({
@@ -449,7 +487,6 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
-    // Toggle overwrite
     const existingOw = channel.permissionOverwrites.cache.get(targetId);
     const hasViewAllow = existingOw?.allow?.has(PermissionFlagsBits.ViewChannel) ?? false;
 
@@ -472,22 +509,18 @@ export async function handleDashboardInteractions(client, interaction) {
     }
   }
 
-  // ---------------- CLAIM / CLOSE / ADD-REMOVE USER ----------------
+  // Ticket actions: claim / close / toggle_user
   if (interaction.isStringSelectMenu() && interaction.customId === IDS.ticketActionsSelect) {
     const action = interaction.values[0];
 
-    // Only support can use this menu
     if (!isSupport(interaction, conf.supportRoleId)) {
-      return interaction.reply({
-        content: "Only the support team can use ticket actions.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "Only the support team can use ticket actions.", ephemeral: true });
     }
 
     const channel = interaction.channel;
     const msg = interaction.message;
 
-    // CLAIM (only one person total, enforced by channel topic tag)
+    // CLAIM (one person only, locked by topic)
     if (action === "claim") {
       const topic = channel?.topic ?? "";
       if (hasClaimTag(topic)) {
@@ -505,23 +538,20 @@ export async function handleDashboardInteractions(client, interaction) {
         allowedMentions: { parse: ["users"] }
       });
 
-      // store claim in channel topic
+      // store claim in topic
       try {
-        const nextTopic = appendTopicTag(topic, claimedTopicTag(interaction.user.id));
-        await channel.setTopic(nextTopic);
-      } catch {
-        // ignore
-      }
+        await channel.setTopic(appendTopicTag(topic, claimedTopicTag(interaction.user.id)));
+      } catch {}
 
-      // Log claimed
-      await logTicket(client, conf, {
-        content:
-          `🟡 **Ticket Claimed**\n` +
-          `• Ticket: <#${channel.id}> (\`${channel.id}\`)\n` +
-          `• Claimed By: <@${interaction.user.id}>`
-      });
+      // LOG: claimed (component-based)
+      const claimedLog = layoutMessage(
+        `## 🟡 **Ticket Claimed**\n` +
+          `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+          `> **Claimed By:** <@${interaction.user.id}>`
+      );
+      await logTicket(client, conf, claimedLog);
 
-      // Optional: update placeholder visually (not relied on)
+      // optional visual placeholder update
       try {
         const newComponents = msg.components.map((row) => {
           const rowJson = row.toJSON();
@@ -534,14 +564,27 @@ export async function handleDashboardInteractions(client, interaction) {
           return rowJson;
         });
         await msg.edit({ components: newComponents });
-      } catch {
-        // ignore
-      }
+      } catch {}
 
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
     }
 
-    // CLOSE (log + transcript + DM + rating)
+    // TOGGLE USER (open user picker)
+    if (action === "toggle_user") {
+      const picker = new UserSelectMenuBuilder()
+        .setCustomId(IDS.ticketUserToggleSelect)
+        .setPlaceholder("Select a user to add/remove…")
+        .setMinValues(1)
+        .setMaxValues(1);
+
+      return interaction.reply({
+        content: "Select a user to **add/remove** from this ticket:",
+        components: [new ActionRowBuilder().addComponents(picker)],
+        ephemeral: true
+      });
+    }
+
+    // CLOSE: logs + transcript (logs + dm) + rating prompt
     if (action === "close") {
       await interaction.reply({ content: "Closing ticket… generating transcript.", ephemeral: true });
 
@@ -549,7 +592,7 @@ export async function handleDashboardInteractions(client, interaction) {
       const { openerId, ticketTypeValue } = getTicketInfoFromTopic(topic);
       const handlerId = getClaimedBy(topic) ?? "none";
 
-      // Build transcript
+      // transcript
       let transcriptText = "";
       try {
         transcriptText = await buildTranscript(channel);
@@ -563,58 +606,48 @@ export async function handleDashboardInteractions(client, interaction) {
         name: transcriptName
       };
 
-      // Log closed + attach transcript
-      await logTicket(client, conf, {
-        content:
-          `🔴 **Ticket Closed**\n` +
-          `• Ticket: \`${channel.id}\`\n` +
-          `• Opener: ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
-          `• Type: **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-          `• Handler: ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}`,
-        files: [transcriptFile]
-      });
+      // LOG: closed (component-based) + transcript attached
+      const closedLog = layoutMessage(
+        `## 🔴 **Ticket Closed**\n` +
+          `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
+          `> **Opener:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
+          `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
+          `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "*Unclaimed*"}\n\n` +
+          `> **Transcript:** Attached below.`
+      );
+      await logTicket(client, conf, closedLog, [transcriptFile]);
 
-      // DM opener with transcript + rating
+      // DM opener (component-based) + transcript + rating buttons
       if (openerId) {
         try {
-          const openerUser = await client.users.fetch(openerId);
-          const row = ratingButtons(channel.id, openerId, handlerId);
+          const dmBody = layoutMessage(
+            `## ✅ **Your ticket has been closed**\n` +
+              `> **Ticket ID:** \`${channel.id}\`\n` +
+              `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
+              `> **Handler:** ${handlerId !== "none" ? `<@${handlerId}>` : "Unclaimed"}\n\n` +
+              `### ⭐ **Rate your experience (optional)**\n` +
+              `> Click a number below (1–5).`
+          );
 
-          await openerUser.send({
-            content:
-              `✅ Your ticket has been closed.\n` +
-              `Ticket ID: \`${channel.id}\`\n` +
-              `Handler: ${handlerId !== "none" ? `<@${handlerId}>` : "Unclaimed"}\n\n` +
-              `If you’d like, rate your support experience (1–5):`,
-            files: [transcriptFile],
-            components: [row]
-          });
+          // Add the buttons row after the layout
+          const row = ratingRow(channel.id, openerId, handlerId);
+
+          await postRawDM(client, openerId, {
+            ...dmBody,
+            // append the action row to existing component-based layout components
+            components: [...dmBody.components, row.toJSON()]
+          }, [transcriptFile]);
         } catch {
-          // If DMs are closed, we just skip DM
+          // DMs closed — ignore
         }
       }
 
-      // Delete channel shortly after
+      // delete ticket channel shortly after
       setTimeout(() => {
         interaction.channel?.delete("Ticket closed").catch(() => {});
       }, 2500);
 
       return;
-    }
-
-    // ADD/REMOVE USER (opens user picker)
-    if (action === "toggle_user") {
-      const picker = new UserSelectMenuBuilder()
-        .setCustomId(IDS.ticketUserToggleSelect)
-        .setPlaceholder("Select a user to add/remove…")
-        .setMinValues(1)
-        .setMaxValues(1);
-
-      return interaction.reply({
-        content: "Select a user to **add/remove** from this ticket:",
-        components: [new ActionRowBuilder().addComponents(picker)],
-        ephemeral: true
-      });
     }
   }
 }
