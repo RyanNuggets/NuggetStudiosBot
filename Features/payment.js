@@ -9,15 +9,51 @@ const PREFIX_DEFAULT = "-";
 
 // --------- Roblox login (cached) ----------
 let loginPromise = null;
+
 async function ensureRobloxLogin() {
   if (loginPromise) return loginPromise;
 
-  const cookie = process.env.ROBLOX_COOKIE;
+  let cookie = process.env.ROBLOX_COOKIE;
+
+  // ---- SAFE DEBUG (does NOT leak the cookie) ----
+  const previewStart = (cookie ?? "").slice(0, 18);
+  const previewEnd = (cookie ?? "").slice(-18);
+  console.log("[PAYMENT] cookie type:", typeof cookie);
+  console.log("[PAYMENT] cookie length:", cookie?.length ?? 0);
+  console.log("[PAYMENT] cookie starts:", JSON.stringify(previewStart));
+  console.log("[PAYMENT] cookie ends:", JSON.stringify(previewEnd));
+  console.log("[PAYMENT] contains WARNING:", (cookie ?? "").includes("WARNING"));
+  console.log("[PAYMENT] contains newline:", /[\r\n]/.test(cookie ?? ""));
+  console.log("[PAYMENT] contains quotes at ends:", /^["']|["']$/.test(cookie ?? ""));
+  // -----------------------------------------------
+
   if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var.");
 
+  // If user accidentally stored ".ROBLOSECURITY=<value>", strip the prefix.
+  cookie = cookie.replace(/^\.ROBLOSECURITY=/i, "").trim();
+
+  // If quotes were included in Railway, strip them safely.
+  cookie = cookie.replace(/^["']|["']$/g, "").trim();
+
+  // Prevent newline issues (Railway paste sometimes adds them)
+  cookie = cookie.replace(/[\r\n]+/g, "");
+
+  // Quick sanity check on format
+  if (!cookie.includes("WARNING")) {
+    throw new Error(
+      "ROBLOX_COOKIE does not include WARNING text. Make sure you copied the full .ROBLOSECURITY value."
+    );
+  }
+
   loginPromise = (async () => {
-    // Noblox expects the .ROBLOSECURITY cookie string
     const currentUser = await noblox.setCookie(cookie);
+    // Login-only confirmation (safe)
+    try {
+      const me = await noblox.getCurrentUser();
+      console.log("[PAYMENT] Logged in as:", me?.UserName, me?.UserID);
+    } catch (e) {
+      console.warn("[PAYMENT] Logged in but getCurrentUser failed:", e?.message ?? e);
+    }
     return currentUser;
   })();
 
@@ -46,7 +82,7 @@ function fmt(n) {
   return Number(n).toLocaleString("en-US");
 }
 
-// Upsert ONE global slash command safely (no overwriting other commands)
+// Upsert ONE global slash command safely (doesn't overwrite other commands)
 async function upsertGlobalCommand(client, command) {
   const appId = client.application?.id;
   if (!appId) throw new Error("Missing application id.");
@@ -95,11 +131,11 @@ async function changeShirtPrice({ newPrice }) {
   await ensureRobloxLogin();
 
   // Grab current info (name/desc required for configureItem)
-  const infoBefore = await noblox.getProductInfo(assetId); // has Name, Description, PriceInRobux, etc.
+  const infoBefore = await noblox.getProductInfo(assetId);
   const name = infoBefore?.Name ?? infoBefore?.name ?? "Untitled";
   const description = infoBefore?.Description ?? infoBefore?.description ?? "";
 
-  // Update price using configureItem
+  // Update price
   await noblox.configureItem(assetId, name, description, undefined, newPrice, undefined);
 
   // Fetch after to confirm
@@ -138,7 +174,7 @@ async function logChange(client, { userId, assetId, name, before, after }) {
   await client.rest.post(Routes.channelMessages(chId), { body: payload }).catch(() => {});
 }
 
-// --------- Handlers ----------
+// --------- Slash handler ----------
 async function handlePaymentSlash(client, interaction) {
   if (!interaction.isChatInputCommand?.()) return false;
   if (interaction.commandName !== "payment") return false;
@@ -147,7 +183,10 @@ async function handlePaymentSlash(client, interaction) {
   const payment = conf.payment;
 
   if (!payment?.allowedRoleId) {
-    return interaction.reply({ content: "Payment command not configured (missing allowedRoleId).", ephemeral: true });
+    return interaction.reply({
+      content: "Payment command not configured (missing allowedRoleId).",
+      ephemeral: true
+    });
   }
 
   if (!hasRole(interaction.member, payment.allowedRoleId)) {
@@ -190,6 +229,7 @@ async function handlePaymentSlash(client, interaction) {
   }
 }
 
+// --------- Prefix handler ----------
 async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
   if (!message || message.author?.bot) return false;
 
@@ -246,8 +286,9 @@ async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
     else await message.reply(donePayload).catch(() => {});
   } catch (e) {
     console.error("❌ [PAYMENT] prefix error:", e);
-    if (thinking) await thinking.edit(`Failed to update price. (${e?.message ?? "Unknown error"})`).catch(() => {});
-    else await message.reply(`Failed to update price. (${e?.message ?? "Unknown error"})`).catch(() => {});
+    const msg = `Failed to update price. (${e?.message ?? "Unknown error"})`;
+    if (thinking) await thinking.edit(msg).catch(() => {});
+    else await message.reply(msg).catch(() => {});
   }
 
   return true;
