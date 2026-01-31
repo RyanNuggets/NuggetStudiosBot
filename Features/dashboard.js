@@ -6,7 +6,8 @@ import {
   PermissionFlagsBits,
   StringSelectMenuBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
 
@@ -69,7 +70,8 @@ const IDS = {
   ticketTypeSelect: "support_ticket_type_select",
   modalBase: "support_enquiry_modal",
   modalInput: "support_enquiry_input",
-  ticketActionsSelect: "ticket_actions_select"
+  ticketActionsSelect: "ticket_actions_select",
+  ticketUserToggleSelect: "ticket_user_toggle_select"
 };
 
 // ---------------- HELPERS ----------------
@@ -87,6 +89,9 @@ const isSupport = (interaction, supportRoleId) => {
   const roles = member.roles?.cache ?? member.roles;
   return roles?.has ? roles.has(supportRoleId) : Array.isArray(roles) ? roles.includes(supportRoleId) : false;
 };
+
+// Hidden tag stored in channel topic to prevent duplicates per type
+const ticketTopicTag = (userId, ticketTypeValue) => `ns_ticket:${userId}:${ticketTypeValue}`;
 
 // ---------------- BUILD TICKET MESSAGE ----------------
 function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquiry }) {
@@ -135,7 +140,8 @@ function buildTicketOpenPayload({ userId, supportRoleId, ticketTypeValue, enquir
                 placeholder: "Ticket Actions…",
                 options: [
                   { label: "Claim", value: "claim" },
-                  { label: "Close", value: "close" }
+                  { label: "Close", value: "close" },
+                  { label: "Add/Remove User", value: "toggle_user" }
                 ]
               }
             ]
@@ -201,6 +207,27 @@ export async function handleDashboardInteractions(client, interaction) {
     const guild = interaction.guild;
     if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
+    // ✅ Only one ticket per type per user
+    // Ensure channels are cached
+    await guild.channels.fetch().catch(() => {});
+    const tag = ticketTopicTag(interaction.user.id, ticketTypeValue);
+
+    const existing = guild.channels.cache.find((ch) => {
+      return (
+        ch?.type === ChannelType.GuildText &&
+        ch?.parentId === conf.ticketCategoryId &&
+        typeof ch.topic === "string" &&
+        ch.topic.includes(tag)
+      );
+    });
+
+    if (existing) {
+      return interaction.reply({
+        content: `You already have an open **${ticketTypeLabel(ticketTypeValue)}** ticket: <#${existing.id}>`,
+        ephemeral: true
+      });
+    }
+
     const channelName = safeChannelName(
       conf.ticketChannelNameFormat.replace("{username}", interaction.user.username)
     );
@@ -209,6 +236,7 @@ export async function handleDashboardInteractions(client, interaction) {
       name: channelName,
       type: ChannelType.GuildText,
       parent: conf.ticketCategoryId,
+      topic: tag, // hidden marker for duplicate prevention
       permissionOverwrites: [
         { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
@@ -248,7 +276,50 @@ export async function handleDashboardInteractions(client, interaction) {
     });
   }
 
-  // ---------------- CLAIM / CLOSE ----------------
+  // ---------------- ADD/REMOVE USER picker submit ----------------
+  if (interaction.isUserSelectMenu && interaction.isUserSelectMenu() && interaction.customId === IDS.ticketUserToggleSelect) {
+    // only support can use
+    if (!isSupport(interaction, conf.supportRoleId)) {
+      return interaction.reply({
+        content: "Only the support team can manage ticket users.",
+        ephemeral: true
+      });
+    }
+
+    const channel = interaction.channel;
+    if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
+
+    const targetId = interaction.values?.[0];
+    if (!targetId) return interaction.reply({ content: "No user selected.", ephemeral: true });
+
+    // Toggle: if user already has overwrite, remove it. If not, add it.
+    const existingOw = channel.permissionOverwrites.cache.get(targetId);
+
+    // Determine if they currently have ViewChannel allowed by explicit overwrite
+    const hasViewAllow = existingOw?.allow?.has(PermissionFlagsBits.ViewChannel) ?? false;
+
+    try {
+      if (existingOw && hasViewAllow) {
+        // Remove overwrite = removes them from the ticket
+        await channel.permissionOverwrites.delete(targetId);
+        return interaction.reply({ content: `Removed <@${targetId}> from this ticket.`, ephemeral: true });
+      } else {
+        // Add overwrite = adds them to the ticket
+        await channel.permissionOverwrites.edit(targetId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          AttachFiles: true,
+          EmbedLinks: true
+        });
+        return interaction.reply({ content: `Added <@${targetId}> to this ticket.`, ephemeral: true });
+      }
+    } catch {
+      return interaction.reply({ content: "Failed to update ticket permissions.", ephemeral: true });
+    }
+  }
+
+  // ---------------- CLAIM / CLOSE / ADD-REMOVE USER ----------------
   if (interaction.isStringSelectMenu() && interaction.customId === IDS.ticketActionsSelect) {
     const action = interaction.values[0];
 
@@ -260,20 +331,19 @@ export async function handleDashboardInteractions(client, interaction) {
       });
     }
 
-    // Ticket can only be claimed once:
-    // We'll "lock" the menu by editing the message components after claim.
-    // If it's already been claimed, the menu placeholder will be changed to "Claimed by ..."
     const msg = interaction.message;
+
+    // Detect if already claimed (placeholder contains "claimed by")
     const alreadyClaimed =
       msg?.components?.some((row) =>
-        row.components?.some(
-          (c) =>
-            c.type === 3 &&
-            c.customId === IDS.ticketActionsSelect &&
-            (c.placeholder?.toLowerCase()?.includes("claimed") || c.disabled === true)
-        )
+        row.components?.some((c) => {
+          const cid = c.customId ?? c.custom_id;
+          const ph = (c.placeholder ?? "").toString().toLowerCase();
+          return cid === IDS.ticketActionsSelect && ph.includes("claimed by");
+        })
       ) ?? false;
 
+    // CLAIM
     if (action === "claim") {
       if (alreadyClaimed) {
         return interaction.reply({ content: "This ticket has already been claimed.", ephemeral: true });
@@ -287,8 +357,7 @@ export async function handleDashboardInteractions(client, interaction) {
         allowedMentions: { parse: ["users"] }
       });
 
-      // Disable the actions menu so it can't be claimed again
-      // (Also prevents close being used by multiple people if you want it locked; but support can still close via other means later.)
+      // Mark as claimed (keep menu usable for Close + Add/Remove)
       try {
         const newComponents = msg.components.map((row) => {
           const rowJson = row.toJSON();
@@ -296,7 +365,6 @@ export async function handleDashboardInteractions(client, interaction) {
             if (c.type === 3 && c.custom_id === IDS.ticketActionsSelect) {
               return {
                 ...c,
-                disabled: true,
                 placeholder: `Claimed by ${interaction.user.username}`
               };
             }
@@ -313,11 +381,27 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Ticket claimed.", ephemeral: true });
     }
 
+    // CLOSE
     if (action === "close") {
       return interaction.reply({ content: "Closing ticket…", ephemeral: true }).then(() => {
         setTimeout(() => {
           interaction.channel?.delete("Ticket closed").catch(() => {});
         }, 3_000);
+      });
+    }
+
+    // ADD/REMOVE USER (opens a user picker)
+    if (action === "toggle_user") {
+      const picker = new UserSelectMenuBuilder()
+        .setCustomId(IDS.ticketUserToggleSelect)
+        .setPlaceholder("Select a user to add/remove…")
+        .setMinValues(1)
+        .setMaxValues(1);
+
+      return interaction.reply({
+        content: "Select a user to **add/remove** from this ticket:",
+        components: [new ActionRowBuilder().addComponents(picker)],
+        ephemeral: true
       });
     }
   }
