@@ -7,60 +7,65 @@ import fs from "fs";
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const PREFIX_DEFAULT = "-";
 
-// --------- Roblox login (cached) ----------
 let loginPromise = null;
+
+function normalizeCookie(raw) {
+  if (!raw) return null;
+
+  let c = String(raw);
+
+  // Strip accidental ".ROBLOSECURITY=" prefix
+  c = c.replace(/^\.ROBLOSECURITY=/i, "");
+
+  // Trim and strip wrapping quotes
+  c = c.trim().replace(/^["']|["']$/g, "").trim();
+
+  // Remove newlines just in case
+  c = c.replace(/[\r\n]+/g, "");
+
+  return c;
+}
 
 async function ensureRobloxLogin() {
   if (loginPromise) return loginPromise;
 
-  let cookie = process.env.ROBLOX_COOKIE;
+  const raw = process.env.ROBLOX_COOKIE;
+  const cookie = normalizeCookie(raw);
 
-  // ---- SAFE DEBUG (does NOT leak the cookie) ----
+  // ---- SAFE DEBUG ----
   const previewStart = (cookie ?? "").slice(0, 18);
   const previewEnd = (cookie ?? "").slice(-18);
-  console.log("[PAYMENT] cookie type:", typeof cookie);
+  console.log("[PAYMENT] cookie type:", typeof raw);
   console.log("[PAYMENT] cookie length:", cookie?.length ?? 0);
   console.log("[PAYMENT] cookie starts:", JSON.stringify(previewStart));
   console.log("[PAYMENT] cookie ends:", JSON.stringify(previewEnd));
   console.log("[PAYMENT] contains WARNING:", (cookie ?? "").includes("WARNING"));
   console.log("[PAYMENT] contains newline:", /[\r\n]/.test(cookie ?? ""));
   console.log("[PAYMENT] contains quotes at ends:", /^["']|["']$/.test(cookie ?? ""));
-  // -----------------------------------------------
+  // ---------------------
 
   if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var.");
-
-  // If user accidentally stored ".ROBLOSECURITY=<value>", strip the prefix.
-  cookie = cookie.replace(/^\.ROBLOSECURITY=/i, "").trim();
-
-  // If quotes were included in Railway, strip them safely.
-  cookie = cookie.replace(/^["']|["']$/g, "").trim();
-
-  // Prevent newline issues (Railway paste sometimes adds them)
-  cookie = cookie.replace(/[\r\n]+/g, "");
-
-  // Quick sanity check on format
   if (!cookie.includes("WARNING")) {
     throw new Error(
-      "ROBLOX_COOKIE does not include WARNING text. Make sure you copied the full .ROBLOSECURITY value."
+      "ROBLOX_COOKIE does not include WARNING text. Copy the full .ROBLOSECURITY value from DevTools."
     );
   }
 
   loginPromise = (async () => {
+    // Important: setCookie must be awaited before any authed calls.
     const currentUser = await noblox.setCookie(cookie);
-    // Login-only confirmation (safe)
-    try {
-      const me = await noblox.getCurrentUser();
-      console.log("[PAYMENT] Logged in as:", me?.UserName, me?.UserID);
-    } catch (e) {
-      console.warn("[PAYMENT] Logged in but getCurrentUser failed:", e?.message ?? e);
-    }
+
+    // Validate with a real authed endpoint
+    const me = await noblox.getCurrentUser();
+    console.log("[PAYMENT] Logged in as:", me?.UserName, me?.UserID);
+
     return currentUser;
   })();
 
   return loginPromise;
 }
 
-// --------- Helpers ----------
+// ---------- Helpers ----------
 function hasRole(member, roleId) {
   if (!roleId) return false;
   const roles = member?.roles?.cache ?? member?.roles;
@@ -99,7 +104,7 @@ async function upsertGlobalCommand(client, command) {
   }
 }
 
-// --------- Slash command registration ----------
+// ---------- Slash registration ----------
 async function registerPaymentSlash(client) {
   const cmd = {
     name: "payment",
@@ -119,7 +124,7 @@ async function registerPaymentSlash(client) {
   console.log(`✅ [PAYMENT] Global slash command ${result}: /payment`);
 }
 
-// --------- Core action ----------
+// ---------- Core action ----------
 async function changeShirtPrice({ newPrice }) {
   const conf = readConfig();
   const payment = conf.payment;
@@ -127,18 +132,15 @@ async function changeShirtPrice({ newPrice }) {
   if (!payment?.assetId) throw new Error("Missing config.payment.assetId");
   const assetId = Number(payment.assetId);
 
-  // Ensure logged in
   await ensureRobloxLogin();
 
-  // Grab current info (name/desc required for configureItem)
+  // name/desc required for configureItem
   const infoBefore = await noblox.getProductInfo(assetId);
-  const name = infoBefore?.Name ?? infoBefore?.name ?? "Untitled";
-  const description = infoBefore?.Description ?? infoBefore?.description ?? "";
+  const name = infoBefore?.Name ?? "Untitled";
+  const description = infoBefore?.Description ?? "";
 
-  // Update price
   await noblox.configureItem(assetId, name, description, undefined, newPrice, undefined);
 
-  // Fetch after to confirm
   const infoAfter = await noblox.getProductInfo(assetId);
 
   return {
@@ -149,7 +151,7 @@ async function changeShirtPrice({ newPrice }) {
   };
 }
 
-// --------- Logging ----------
+// ---------- Logging ----------
 async function logChange(client, { userId, assetId, name, before, after }) {
   const conf = readConfig();
   const chId = conf?.payment?.logChannelId;
@@ -174,7 +176,7 @@ async function logChange(client, { userId, assetId, name, before, after }) {
   await client.rest.post(Routes.channelMessages(chId), { body: payload }).catch(() => {});
 }
 
-// --------- Slash handler ----------
+// ---------- Slash handler ----------
 async function handlePaymentSlash(client, interaction) {
   if (!interaction.isChatInputCommand?.()) return false;
   if (interaction.commandName !== "payment") return false;
@@ -229,10 +231,45 @@ async function handlePaymentSlash(client, interaction) {
   }
 }
 
-// --------- Prefix handler ----------
-async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
-  if (!message || message.author?.bot) return false;
+// ---------- Prefix handlers ----------
+async function handleRbxTestPrefix(message, prefix = PREFIX_DEFAULT) {
+  const content = String(message.content ?? "").trim().toLowerCase();
+  if (!content.startsWith(`${prefix}rbxtest`)) return false;
 
+  const conf = readConfig();
+  const payment = conf.payment;
+
+  if (!payment?.allowedRoleId) {
+    await message.reply("Payment config missing allowedRoleId.").catch(() => {});
+    return true;
+  }
+  if (!hasRole(message.member, payment.allowedRoleId)) {
+    await message.reply("You don’t have permission to use this command.").catch(() => {});
+    return true;
+  }
+
+  const thinking = await message.reply("Testing Roblox login…").catch(() => null);
+
+  try {
+    await ensureRobloxLogin();
+    const me = await noblox.getCurrentUser();
+    const msg = `✅ Roblox login OK: **${me?.UserName ?? "Unknown"}** (\`${me?.UserID ?? "?"}\`)`;
+    if (thinking) await thinking.edit(msg).catch(() => {});
+    else await message.reply(msg).catch(() => {});
+  } catch (e) {
+    console.error("❌ [PAYMENT] rbxtest error:", e);
+    const msg =
+      `❌ Roblox login failed.\n` +
+      `Reason: **${e?.message ?? "Unknown error"}**\n\n` +
+      `If cookie looks correct, Roblox likely invalidated it. Re-copy a fresh .ROBLOSECURITY from DevTools → Application → Cookies → www.roblox.com.`;
+    if (thinking) await thinking.edit(msg).catch(() => {});
+    else await message.reply(msg).catch(() => {});
+  }
+
+  return true;
+}
+
+async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
   const content = String(message.content ?? "").trim();
   if (!content.toLowerCase().startsWith(`${prefix}payment`)) return false;
 
@@ -294,7 +331,7 @@ async function handlePaymentPrefix(client, message, prefix = PREFIX_DEFAULT) {
   return true;
 }
 
-// --------- Export registrar ----------
+// ---------- Export registrar ----------
 export default function registerPaymentModule(client, { prefix = PREFIX_DEFAULT } = {}) {
   client.once("ready", async () => {
     try {
@@ -315,6 +352,11 @@ export default function registerPaymentModule(client, { prefix = PREFIX_DEFAULT 
 
   client.on("messageCreate", async (message) => {
     try {
+      // extra debug command:
+      // -rbxtest  -> confirms cookie works server-side
+      if (await handleRbxTestPrefix(message, prefix)) return;
+
+      // -payment <price>
       await handlePaymentPrefix(client, message, prefix);
     } catch (e) {
       console.error("❌ [PAYMENT] messageCreate error:", e);
