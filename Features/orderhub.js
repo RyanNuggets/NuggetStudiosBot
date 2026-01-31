@@ -49,7 +49,9 @@ const REVIEW_STATE = new Map();
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165";
 
+// Your custom emoji (NOTE: requires Use External Emojis if not from this server)
 const STAR_EMOJI = "<:star:1467246556649623694>";
+const STAR_EMOJI_OBJ = { id: "1467246556649623694", name: "star" };
 
 // ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
@@ -83,7 +85,7 @@ const ORDER_HUB_LAYOUT = {
 };
 
 // ---------------- PAYMENT PROMPT (EPHEMERAL) ----------------
-// IMPORTANT: raw JSON components only (no ActionRowBuilder) to avoid toJSON errors
+// IMPORTANT: raw JSON components only here (no ActionRowBuilder) to avoid toJSON builder mixing bugs
 function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
   return {
     ephemeral: true,
@@ -401,9 +403,7 @@ function buildClosePromptPayload(openerId) {
             type: 10,
             content:
               "## Your order has now been completed!\n" +
-              "If you’re happy with the final result, we’d really appreciate you taking a moment to leave a review — " +
-              "your feedback helps us improve and supports Nugget Studios.\n" +
-              "If you’d prefer not to leave a review, select **Close without Review**."
+              "If you’re happy with the final result, we’d appreciate you leaving a review — it helps us improve and supports Nugget Studios. If you’d prefer not to leave a review, select **Close without Review**."
           },
           { type: 14, spacing: 2 },
           {
@@ -422,7 +422,9 @@ function buildClosePromptPayload(openerId) {
 // ---------------- REVIEW FLOW UI ----------------
 function buildDesignerPickerEphemeral() {
   return {
-    content: "Select the **designer** you’re reviewing:",
+    content:
+      "Select the **designer** you’re reviewing.\n" +
+      "> Only staff members can be reviewed. If you pick a non-staff user, it will be rejected.",
     components: [
       new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
@@ -445,11 +447,11 @@ function buildRatingSelectEphemeral() {
           .setCustomId(IDS.reviewRatingSelect)
           .setPlaceholder("Choose 1–5…")
           .addOptions([
-            { label: "1", value: "1" },
-            { label: "2", value: "2" },
-            { label: "3", value: "3" },
-            { label: "4", value: "4" },
-            { label: "5", value: "5" }
+            { label: "1", value: "1", emoji: STAR_EMOJI_OBJ },
+            { label: "2", value: "2", emoji: STAR_EMOJI_OBJ },
+            { label: "3", value: "3", emoji: STAR_EMOJI_OBJ },
+            { label: "4", value: "4", emoji: STAR_EMOJI_OBJ },
+            { label: "5", value: "5", emoji: STAR_EMOJI_OBJ }
           ])
       )
     ],
@@ -475,9 +477,10 @@ function buildProductSelectEphemeral() {
   };
 }
 
-// CLEANER review embed (normal embeds w/ fields, like your example)
-function buildCleanReviewEmbed({ userId, designerId, rating, product, message }) {
-  const stars = Array.from({ length: Number(rating) }, () => STAR_EMOJI).join("");
+// CLEAN review embed (normal embeds w/ fields like your example)
+function buildCleanReviewEmbed({ userId, designerId, rating, product, message, orderChannelId }) {
+  const count = Math.max(0, Math.min(5, parseInt(rating, 10) || 0));
+  const stars = STAR_EMOJI.repeat(count);
 
   const safeMsg = String(message ?? "").trim() || "No message provided.";
   const clipped = safeMsg.length > 900 ? safeMsg.slice(0, 900) + "…" : safeMsg;
@@ -487,7 +490,10 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message })
     embeds: [
       { image: { url: BRAND_IMAGE } },
       {
-        description: `## New Order Review\n> - Review left by <@${userId}>.`,
+        description:
+          `## New Order Review\n` +
+          `> - Review left by <@${userId}>.\n` +
+          (orderChannelId ? `> - Order ticket: <#${orderChannelId}>.` : ""),
         fields: [
           { name: "Designer:", value: `<@${designerId}>`, inline: true },
           { name: "Rating:", value: stars || "—", inline: true },
@@ -579,7 +585,7 @@ async function closeOrderNow(client, interaction, channel, oh) {
     channel.delete("Order closed").catch(() => {});
   }, 2500);
 
-  // Try to acknowledge
+  // Try to acknowledge interaction (best effort)
   try {
     if (interaction?.isRepliable?.()) {
       const payload = { content: "✅ Order closed.", ephemeral: true };
@@ -765,6 +771,7 @@ export async function handleOrderHubInteractions(client, interaction) {
   }
 
   // ---------------- SELECT MENUS ----------------
+
   // Ticket actions dropdown (inside order ticket)
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.ticketActionsSelect) {
     const action = interaction.values[0];
@@ -787,7 +794,9 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (hasClaimTag(topic)) {
         const claimedBy = getClaimedBy(topic);
         return interaction.reply({
-          content: claimedBy ? `This order is already claimed by <@${claimedBy}>.` : "This order has already been claimed.",
+          content: claimedBy
+            ? `This order is already claimed by <@${claimedBy}>.`
+            : "This order has already been claimed.",
           ephemeral: true
         });
       }
@@ -893,27 +902,57 @@ export async function handleOrderHubInteractions(client, interaction) {
   }
 
   // ---------------- REVIEW FLOW SELECTS ----------------
+  // designer select -> validate staff role -> rating select
   if (interaction.isUserSelectMenu?.() && interaction.customId === IDS.reviewDesignerSelect) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
 
     const key = `${channel.id}:${interaction.user.id}`;
     const state = REVIEW_STATE.get(key);
-    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+    if (!state) {
+      return interaction.reply({
+        content: "Review session expired. Click **Leave a Review** again.",
+        ephemeral: true
+      });
+    }
 
-    state.designerId = interaction.values?.[0];
+    const designerId = interaction.values?.[0];
+    if (!designerId) return interaction.reply({ content: "No user selected.", ephemeral: true });
+
+    const staffRoleId = oh?.staffRoleId;
+    if (!staffRoleId) {
+      return interaction.reply({ content: "Missing orderhub.staffRoleId in config.json", ephemeral: true });
+    }
+
+    const member = await interaction.guild?.members.fetch(designerId).catch(() => null);
+    const isStaff = member?.roles?.cache?.has(staffRoleId) ?? false;
+
+    if (!isStaff) {
+      return interaction.reply({
+        content: "That user isn’t a staff/designer. Please select a valid **staff member**.",
+        ephemeral: true
+      });
+    }
+
+    state.designerId = designerId;
     REVIEW_STATE.set(key, state);
 
     return interaction.reply(buildRatingSelectEphemeral());
   }
 
+  // rating select -> product select
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.reviewRatingSelect) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
 
     const key = `${channel.id}:${interaction.user.id}`;
     const state = REVIEW_STATE.get(key);
-    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+    if (!state) {
+      return interaction.reply({
+        content: "Review session expired. Click **Leave a Review** again.",
+        ephemeral: true
+      });
+    }
 
     state.rating = interaction.values?.[0];
     REVIEW_STATE.set(key, state);
@@ -921,13 +960,19 @@ export async function handleOrderHubInteractions(client, interaction) {
     return interaction.reply(buildProductSelectEphemeral());
   }
 
+  // product select -> modal
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.reviewProductSelect) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
 
     const key = `${channel.id}:${interaction.user.id}`;
     const state = REVIEW_STATE.get(key);
-    if (!state) return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+    if (!state) {
+      return interaction.reply({
+        content: "Review session expired. Click **Leave a Review** again.",
+        ephemeral: true
+      });
+    }
 
     state.product = interaction.values?.[0];
     REVIEW_STATE.set(key, state);
@@ -946,7 +991,7 @@ export async function handleOrderHubInteractions(client, interaction) {
     return interaction.showModal(modal);
   }
 
-  // ---------------- REVIEW MODAL SUBMIT ----------------
+  // modal submit -> post review -> close order
   if (interaction.isModalSubmit?.() && interaction.customId === IDS.reviewModal) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
@@ -955,7 +1000,10 @@ export async function handleOrderHubInteractions(client, interaction) {
     const state = REVIEW_STATE.get(key);
 
     if (!state?.designerId || !state?.rating || !state?.product) {
-      return interaction.reply({ content: "Review session expired. Click **Leave a Review** again.", ephemeral: true });
+      return interaction.reply({
+        content: "Review session expired. Click **Leave a Review** again.",
+        ephemeral: true
+      });
     }
 
     if (!oh?.reviewChannelId) {
@@ -964,7 +1012,6 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     const feedback = interaction.fields.getTextInputValue(IDS.reviewModalInput);
 
-    // send review
     await postRaw(
       client,
       oh.reviewChannelId,
@@ -973,7 +1020,8 @@ export async function handleOrderHubInteractions(client, interaction) {
         designerId: state.designerId,
         rating: state.rating,
         product: state.product,
-        message: feedback
+        message: feedback,
+        orderChannelId: channel.id
       })
     ).catch((e) => console.error("[ORDERHUB] review post failed:", e));
 
@@ -983,7 +1031,6 @@ export async function handleOrderHubInteractions(client, interaction) {
       .reply({ content: "✅ Review submitted. Closing the order…", ephemeral: true })
       .catch(() => {});
 
-    // close order after review (transcript + logs + DM + delete)
     return closeOrderNow(client, interaction, channel, oh);
   }
 }
