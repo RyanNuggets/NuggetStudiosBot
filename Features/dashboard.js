@@ -7,9 +7,7 @@ import {
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
-  UserSelectMenuBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
 
@@ -72,8 +70,7 @@ const IDS = {
   modalBase: "support_enquiry_modal",
   modalInput: "support_enquiry_input",
   ticketActionsSelect: "ticket_actions_select",
-  ticketUserToggleSelect: "ticket_user_toggle_select",
-  ratePrefix: "ticket_rate" // ticket_rate:<ticketId>:<openerId>:<handlerId>:<rating>
+  ticketUserToggleSelect: "ticket_user_toggle_select"
 };
 
 // ---------------- HELPERS ----------------
@@ -138,19 +135,6 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
     allowed_mentions: { parse: ["users", "roles"] },
     components
   };
-}
-
-function ratingRow(ticketId, openerId, handlerId) {
-  const row = new ActionRowBuilder();
-  for (let i = 1; i <= 5; i++) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
-        .setLabel(String(i))
-        .setStyle(ButtonStyle.Secondary)
-    );
-  }
-  return row;
 }
 
 // ---------------- RAW REST SEND HELPERS ----------------
@@ -338,67 +322,6 @@ export async function sendDashboard(client) {
 // ---------------- INTERACTION HANDLER ----------------
 export async function handleDashboardInteractions(client, interaction) {
   const { dashboard: conf } = readConfig();
-
-  // ---------------- RATING BUTTONS (DM) ----------------
-  if (interaction.isButton?.() && interaction.customId.startsWith(IDS.ratePrefix + ":")) {
-    const [_, ticketId, openerId, handlerId, rating] = interaction.customId.split(":");
-
-    if (interaction.user.id !== openerId) {
-      return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
-    }
-
-    // ACK immediately
-    await interaction.deferUpdate().catch(() => {});
-
-    // If already disabled, ignore
-    const alreadyDisabled = interaction.message.components?.some((row) =>
-      row.components?.some((c) => c.customId?.startsWith(IDS.ratePrefix + ":") && c.disabled)
-    );
-    if (alreadyDisabled) return;
-
-    // Disable ALL rating buttons
-    const disabledRow = new ActionRowBuilder();
-    for (let i = 1; i <= 5; i++) {
-      disabledRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
-          .setLabel(String(i))
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true)
-      );
-    }
-
-    const confirm = layoutMessage(
-      `## ✅ **Thanks for rating**\n` +
-        `> You rated this ticket **${rating}/5**.`
-    );
-
-    // FORCE EDIT the message to disable buttons
-    try {
-      await interaction.message.edit({
-        content: "",
-        components: [...confirm.components, disabledRow.toJSON()]
-      });
-    } catch (e) {
-      console.error("Failed to disable rating buttons:", e);
-    }
-
-    // Best-effort log; never message user if it fails
-    try {
-      const ratingLog = layoutMessage(
-        `## ⭐ **Ticket Rated**\n` +
-          `> **Ticket:** \`${ticketId}\`\n` +
-          `> **Opener:** <@${openerId}>\n` +
-          `> **Handler ID:** ${handlerId && handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
-          `> **Rating:** **${rating}/5**`
-      );
-      await logTicketMessage(client, conf, ratingLog);
-    } catch {
-      // ignore
-    }
-
-    return;
-  }
 
   // Dashboard select
   if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
@@ -692,7 +615,7 @@ export async function handleDashboardInteractions(client, interaction) {
         console.error("Transcript send to logs failed:", e);
       }
 
-      // DM opener: ONE combined (closed+rating), then transcript plain
+      // DM opener: CLOSED ONLY (no rating), then transcript plain
       if (openerId) {
         try {
           const dmBody = layoutMessage(
@@ -700,15 +623,12 @@ export async function handleDashboardInteractions(client, interaction) {
               `> **Ticket ID:** \`${channel.id}\`\n` +
               `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
               `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}\n\n` +
-              `### ⭐ **Rate your experience (optional)**\n` +
-              `> Click a number below (1–5).`
+              `> If you need anything else, feel free to open a new ticket from the dashboard.`
           );
 
-          const row = ratingRow(channel.id, openerId, handlerId);
-
-          await postRawDM(client, openerId, { ...dmBody, components: [...dmBody.components, row.toJSON()] });
+          await postRawDM(client, openerId, dmBody);
         } catch (e) {
-          console.error("DM closed+rating failed:", e);
+          console.error("DM closed failed:", e);
         }
 
         try {
