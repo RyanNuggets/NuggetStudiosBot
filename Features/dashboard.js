@@ -241,11 +241,11 @@ export async function handleDashboardInteractions(client, interaction) {
 
     // CLOSE
     if (action === "close") {
-      await interaction.reply({ content: "Closing ticket in 10 seconds…", ephemeral: true });
+      await interaction.reply({ content: "Closing ticket…", ephemeral: true });
 
       setTimeout(() => {
         interaction.channel.delete("Ticket closed").catch(() => {});
-      }, 10_000);
+      }, 3_000);
     }
   }
 }
