@@ -4,7 +4,6 @@ import {
   ActionRowBuilder,
   ChannelType,
   PermissionFlagsBits,
-  StringSelectMenuBuilder,
   UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
@@ -12,7 +11,7 @@ import fs from "fs";
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------------- IDS (ORDER HUB) ----------------
+// ---------------- IDS ----------------
 const IDS = {
   // public order hub buttons
   orderStandardBtn: "orderhub_standard",
@@ -23,26 +22,23 @@ const IDS = {
   payCard: "orderhub_card",
   payRobux: "orderhub_robux",
 
-  // ticket actions (same behavior as support tickets)
+  // order ticket controls
   ticketActionsSelect: "orderhub_ticket_actions_select",
   ticketUserToggleSelect: "orderhub_ticket_user_toggle_select"
 };
 
-// ---------------- BRAND / IMAGES ----------------
+// ---------------- BRAND ----------------
 const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165";
 
-// ---------------- ORDER HUB MESSAGE (PUBLIC; COMPONENT-V2 OK) ----------------
+// ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
   flags: 32768,
   components: [
     {
       type: 17,
       components: [
-        {
-          type: 12,
-          items: [{ media: { url: BRAND_IMAGE } }]
-        },
+        { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
         { type: 14, spacing: 1 },
         {
           type: 10,
@@ -66,8 +62,7 @@ const ORDER_HUB_LAYOUT = {
   ]
 };
 
-// ---------------- PAYMENT PROMPT (EPHEMERAL EMBED + BUTTONS) ----------------
-// NOTE: Must be RAW JSON components (not builders) to avoid "toJSON is not a function"
+// ---------------- PAYMENT PROMPT (EPHEMERAL) ----------------
 function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
   return {
     ephemeral: true,
@@ -118,8 +113,9 @@ const hasRole = (interaction, roleId) => {
   return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 };
 
-// topic tags (separate namespace so it doesn’t collide with support tickets)
-const orderTopicTag = (userId, orderType, payType) => `ns_order:${userId}:${orderType}:${payType}`;
+// topic tags (single open order per user)
+const orderUserTag = (userId) => `ns_order_user:${userId}`;
+const orderMetaTag = (orderType, payType) => `ns_order_meta:${orderType}:${payType}`;
 const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
 const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
 
@@ -129,18 +125,35 @@ const getClaimedBy = (topic = "") => {
   return m ? m[1] : null;
 };
 
-const getOrderInfoFromTopic = (topic = "") => {
-  const m = topic.match(/ns_order:(\d{5,}):([a-z0-9_-]+):([a-z0-9_-]+)/i);
-  if (!m) return { openerId: null, orderType: null, payType: null };
-  return { openerId: m[1], orderType: m[2], payType: m[3] };
-};
-
 const getStaffRoleFromTopic = (topic = "") => {
   const m = topic.match(/ns_staffrole:(\d{5,})/);
   return m ? m[1] : null;
 };
 
+const getOrderUserFromTopic = (topic = "") => {
+  const m = topic.match(/ns_order_user:(\d{5,})/);
+  return m ? m[1] : null;
+};
+
+const getOrderMetaFromTopic = (topic = "") => {
+  const m = topic.match(/ns_order_meta:([a-z0-9_-]+):([a-z0-9_-]+)/i);
+  if (!m) return { orderType: null, payType: null };
+  return { orderType: m[1], payType: m[2] };
+};
+
 const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
+
+// ---------------- COOLDOWN (ANTI SPAM CLICK) ----------------
+const clickCooldown = new Map(); // userId -> timestamp
+const COOLDOWN_MS = 2500;
+
+function cooldownHit(userId) {
+  const now = Date.now();
+  const last = clickCooldown.get(userId) ?? 0;
+  if (now - last < COOLDOWN_MS) return true;
+  clickCooldown.set(userId, now);
+  return false;
+}
 
 // ---------------- REST SEND HELPERS ----------------
 async function postRaw(client, channelId, body, files = undefined) {
@@ -168,7 +181,7 @@ async function logOrderMessage(client, conf, body) {
   return postRaw(client, logId, body);
 }
 
-// ---------------- LOG / DM COMPONENT LAYOUT ----------------
+// ---------------- LOG / DM LAYOUT ----------------
 function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   const components = [];
   if (pingLine) components.push({ type: 10, content: pingLine });
@@ -339,6 +352,25 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
   };
 }
 
+// ---------------- FIND EXISTING OPEN ORDER (ANY TYPE/PAY) ----------------
+async function findExistingOrderChannel(guild, oh, userId) {
+  await guild.channels.fetch().catch(() => {});
+  const tag = orderUserTag(userId);
+
+  // search both categories (fiat + robux)
+  const cats = [oh?.categoryFiatId, oh?.categoryRobuxId].filter(Boolean);
+
+  return (
+    guild.channels.cache.find(
+      (ch) =>
+        ch?.type === ChannelType.GuildText &&
+        cats.includes(ch.parentId) &&
+        typeof ch.topic === "string" &&
+        ch.topic.includes(tag)
+    ) ?? null
+  );
+}
+
 // ---------------- SEND ORDER HUB MESSAGE ----------------
 export async function sendOrderHub(client) {
   const conf = readConfig();
@@ -355,11 +387,30 @@ export async function handleOrderHubInteractions(client, interaction) {
   const oh = conf.orderhub;
   const globalGuildId = conf.guildId;
 
-  // only run in your main server
+  if (!oh) return;
+
+  // only run in main server
   if (globalGuildId && interaction.guild?.id && interaction.guild.id !== globalGuildId) return;
 
-  // -------- Order type buttons -> show payment method (ephemeral) --------
+  // ------------- BUTTONS -------------
   if (interaction.isButton?.()) {
+    // anti-spam
+    if (cooldownHit(interaction.user.id)) {
+      return interaction.reply({ content: "Slow down 😭", ephemeral: true }).catch(() => {});
+    }
+
+    // If they already have any order open, block early (even before payment prompt)
+    if (interaction.customId === IDS.orderStandardBtn || interaction.customId === IDS.orderPackageBtn) {
+      const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
+      if (existing) {
+        return interaction.reply({
+          content: `You already have an open order: <#${existing.id}>`,
+          ephemeral: true
+        });
+      }
+    }
+
+    // Order type -> payment prompt
     if (interaction.customId === IDS.orderStandardBtn) {
       return interaction.reply(buildPaymentPrompt("Standard Order", "standard"));
     }
@@ -367,12 +418,20 @@ export async function handleOrderHubInteractions(client, interaction) {
       return interaction.reply(buildPaymentPrompt("Package Order", "package"));
     }
 
-    // -------- Payment buttons -> open ticket --------
+    // Payment buttons -> create ticket
     if (
       interaction.customId.startsWith(IDS.payPaypal + ":") ||
       interaction.customId.startsWith(IDS.payCard + ":") ||
       interaction.customId.startsWith(IDS.payRobux + ":")
     ) {
+      const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
+      if (existing) {
+        return interaction.reply({
+          content: `You already have an open order: <#${existing.id}>`,
+          ephemeral: true
+        });
+      }
+
       const [base, orderType] = interaction.customId.split(":");
       const payType = base === IDS.payPaypal ? "paypal" : base === IDS.payCard ? "card" : "robux";
 
@@ -394,26 +453,6 @@ export async function handleOrderHubInteractions(client, interaction) {
 
       const parentId = payType === "robux" ? oh.categoryRobuxId : oh.categoryFiatId;
 
-      // one open order per type per user (within that category)
-      await guild.channels.fetch().catch(() => {});
-      const tag = orderTopicTag(interaction.user.id, orderType, payType);
-
-      const existing = guild.channels.cache.find((ch) => {
-        return (
-          ch?.type === ChannelType.GuildText &&
-          ch?.parentId === parentId &&
-          typeof ch.topic === "string" &&
-          ch.topic.includes(`ns_order:${interaction.user.id}:${orderType}`)
-        );
-      });
-
-      if (existing) {
-        return interaction.reply({
-          content: `You already have an open **${orderType}** order: <#${existing.id}>`,
-          ephemeral: true
-        });
-      }
-
       const channelName = safeChannelName(
         (oh.orderChannelNameFormat ?? "order-{username}").replace(
           "{username}",
@@ -421,7 +460,12 @@ export async function handleOrderHubInteractions(client, interaction) {
         )
       );
 
-      const topic = appendTopicTag(tag, staffRoleTopicTag(oh.staffRoleId));
+      // topic includes: user tag + meta + staff role
+      const topic =
+        appendTopicTag(
+          appendTopicTag(orderUserTag(interaction.user.id), orderMetaTag(orderType, payType)),
+          staffRoleTopicTag(oh.staffRoleId)
+        );
 
       const channel = await guild.channels.create({
         name: channelName,
@@ -484,6 +528,8 @@ export async function handleOrderHubInteractions(client, interaction) {
         console.error("[ORDERHUB] open log failed:", e);
       }
 
+      // Disable the ephemeral payment buttons to reduce spam
+      // (editReply works after reply; but we replied earlier with the payment prompt in a different interaction)
       return interaction.reply({
         content: `✅ Your order has been created: <#${channel.id}>`,
         ephemeral: true
@@ -562,7 +608,8 @@ export async function handleOrderHubInteractions(client, interaction) {
       await interaction.reply({ content: "Closing order… generating transcript.", ephemeral: true });
 
       const topic = channel.topic ?? "";
-      const { openerId, orderType, payType } = getOrderInfoFromTopic(topic);
+      const openerId = getOrderUserFromTopic(topic);
+      const { orderType, payType } = getOrderMetaFromTopic(topic);
       const handlerId = getClaimedBy(topic) ?? "none";
 
       const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
@@ -594,7 +641,7 @@ export async function handleOrderHubInteractions(client, interaction) {
         transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
       }
 
-      // Send transcript to logs
+      // Transcript in logs
       try {
         await sendPlainTranscriptToChannel(client, oh.orderLogsChannelId, channel.id, transcriptText);
       } catch (e) {
