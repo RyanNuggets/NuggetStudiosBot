@@ -225,24 +225,21 @@ async function buildTranscriptTxt(channel, maxMessages = 4000) {
   return lines.join("\n");
 }
 
-// Discord message limit is 2000 chars; keep headroom.
 function splitPlainTextMessages(text, chunkSize = 1800) {
   const chunks = [];
   const lines = String(text ?? "").split("\n");
 
   let cur = "";
   for (const line of lines) {
-    // +1 for newline
-    if ((cur.length + line.length + 1) > chunkSize) {
+    if (cur.length + line.length + 1 > chunkSize) {
       if (cur) chunks.push(cur);
       cur = line;
     } else {
-      cur = cur ? (cur + "\n" + line) : line;
+      cur = cur ? cur + "\n" + line : line;
     }
   }
   if (cur) chunks.push(cur);
 
-  // If there are any chunks still > chunkSize (very long single line), hard slice.
   const finalChunks = [];
   for (const c of chunks) {
     if (c.length <= chunkSize) finalChunks.push(c);
@@ -256,34 +253,31 @@ function splitPlainTextMessages(text, chunkSize = 1800) {
 }
 
 async function sendPlainTranscriptToChannel(client, channelId, ticketId, transcriptText) {
+  if (!channelId) return;
   const chunks = splitPlainTextMessages(transcriptText, 1800);
 
-  // header
   await postRaw(client, channelId, {
-    content: `**Transcript for ticket \`${ticketId}\`** (${chunks.length} message${chunks.length === 1 ? "" : "s"})`
+    content: `**Transcript for ticket \`${ticketId}\`** (${chunks.length} message${
+      chunks.length === 1 ? "" : "s"
+    })`
   });
 
-  // chunks
-  for (let i = 0; i < chunks.length; i++) {
-    await postRaw(client, channelId, {
-      content: "```txt\n" + chunks[i] + "\n```"
-    });
+  for (const chunk of chunks) {
+    await postRaw(client, channelId, { content: "```txt\n" + chunk + "\n```" });
   }
 }
 
 async function sendPlainTranscriptToDM(client, userId, ticketId, transcriptText) {
   const chunks = splitPlainTextMessages(transcriptText, 1800);
 
-  // header
   await postRawDM(client, userId, {
-    content: `**Your transcript for ticket \`${ticketId}\`** (${chunks.length} message${chunks.length === 1 ? "" : "s"})`
+    content: `**Your transcript for ticket \`${ticketId}\`** (${chunks.length} message${
+      chunks.length === 1 ? "" : "s"
+    })`
   });
 
-  // chunks
-  for (let i = 0; i < chunks.length; i++) {
-    await postRawDM(client, userId, {
-      content: "```txt\n" + chunks[i] + "\n```"
-    });
+  for (const chunk of chunks) {
+    await postRawDM(client, userId, { content: "```txt\n" + chunk + "\n```" });
   }
 }
 
@@ -295,10 +289,7 @@ function buildTicketOpenPayload({ userId, staffRoleId, ticketTypeValue, enquiry 
     flags: 32768,
     allowed_mentions: { parse: ["users", "roles"] },
     components: [
-      {
-        type: 10,
-        content: `-# <@${userId}> | <@&${staffRoleId}>`
-      },
+      { type: 10, content: `-# <@${userId}> | <@&${staffRoleId}>` },
       {
         type: 17,
         components: [
@@ -356,17 +347,47 @@ export async function handleDashboardInteractions(client, interaction) {
       return interaction.reply({ content: "Only the ticket opener can rate this ticket.", ephemeral: true });
     }
 
-    // ✅ If already rated (buttons disabled), block spam
     const alreadyDisabled = interaction.message.components?.some((row) =>
       row.components?.some((c) => c.customId?.startsWith(IDS.ratePrefix + ":") && c.disabled)
     );
-
     if (alreadyDisabled) {
       return interaction.reply({ content: "You already rated this ticket.", ephemeral: true });
     }
 
+    // Build disabled buttons + confirm
+    const disabledRow = new ActionRowBuilder();
+    for (let i = 1; i <= 5; i++) {
+      disabledRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
+          .setLabel(String(i))
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      );
+    }
+
+    const confirm = layoutMessage(
+      `## ✅ **Thank you for rating**\n` +
+        `> You rated this ticket **${rating}/5**.`
+    );
+
+    // Update UI first (stop spam). Never show error.
+    let uiUpdated = false;
     try {
-      // LOG rating WITHOUT pinging handler (no <@handler>)
+      await interaction.update({ content: "", components: [...confirm.components, disabledRow.toJSON()] });
+      uiUpdated = true;
+    } catch {
+      try {
+        await interaction.deferUpdate().catch(() => {});
+        await interaction.message.edit({ content: "", components: [...confirm.components, disabledRow.toJSON()] });
+        uiUpdated = true;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Best-effort log, never complain
+    try {
       const ratingLog = layoutMessage(
         `## ⭐ **Ticket Rated**\n` +
           `> **Ticket:** \`${ticketId}\`\n` +
@@ -375,33 +396,14 @@ export async function handleDashboardInteractions(client, interaction) {
           `> **Rating:** **${rating}/5**`
       );
       await logTicketMessage(client, conf, ratingLog);
-
-      // ✅ Disable all rating buttons + change message to confirmation
-      const disabledRow = new ActionRowBuilder();
-      for (let i = 1; i <= 5; i++) {
-        disabledRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${IDS.ratePrefix}:${ticketId}:${openerId}:${handlerId}:${i}`)
-            .setLabel(String(i))
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true)
-        );
-      }
-
-      const confirm = layoutMessage(
-        `## ✅ **Rating submitted**\n` +
-          `> You rated this ticket **${rating}/5**.\n` +
-          `> Thanks for the feedback!`
-      );
-
-      await interaction.update({
-        content: "",
-        components: [...confirm.components, disabledRow.toJSON()]
-      });
     } catch (e) {
-      console.error("Rating failed:", e);
-      return interaction.reply({ content: "Rating failed to log. Please try again.", ephemeral: true });
+      console.error("Rating log failed (ignored):", e);
     }
+
+    if (!uiUpdated) {
+      return interaction.reply({ content: `Thanks! You rated **${rating}/5**.`, ephemeral: true }).catch(() => {});
+    }
+
     return;
   }
 
@@ -614,7 +616,9 @@ export async function handleDashboardInteractions(client, interaction) {
       if (hasClaimTag(topic)) {
         const claimedBy = getClaimedBy(topic);
         return interaction.reply({
-          content: claimedBy ? `This ticket is already claimed by <@${claimedBy}>.` : "This ticket has already been claimed.",
+          content: claimedBy
+            ? `This ticket is already claimed by <@${claimedBy}>.`
+            : "This ticket has already been claimed.",
           ephemeral: true
         });
       }
@@ -679,7 +683,7 @@ export async function handleDashboardInteractions(client, interaction) {
         console.error("Closed log failed:", e);
       }
 
-      // Build transcript text
+      // Build transcript
       let transcriptText = "";
       try {
         transcriptText = await buildTranscriptTxt(channel);
@@ -688,45 +692,36 @@ export async function handleDashboardInteractions(client, interaction) {
         transcriptText = `Transcript failed to generate.\nChannel: #${channel.name} (${channel.id})`;
       }
 
-      // ✅ Send transcript as plain text messages (logs)
+      // Transcript in logs (plain text)
       try {
         await sendPlainTranscriptToChannel(client, conf.ticketLogsChannelId, channel.id, transcriptText);
       } catch (e) {
         console.error("Transcript send to logs failed:", e);
       }
 
-      // DM opener: closed message (component) + transcript plain text + rating (component)
+      // DM opener: ONE combined (closed+rating), then transcript plain
       if (openerId) {
-        // Closed DM (component)
         try {
-          const closedDm = layoutMessage(
+          const dmBody = layoutMessage(
             `## ✅ **Your ticket has been closed**\n` +
               `> **Ticket ID:** \`${channel.id}\`\n` +
               `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-              `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}`
+              `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}\n\n` +
+              `### ⭐ **Rate your experience (optional)**\n` +
+              `> Click a number below (1–5).`
           );
-          await postRawDM(client, openerId, closedDm);
+
+          const row = ratingRow(channel.id, openerId, handlerId);
+
+          await postRawDM(client, openerId, { ...dmBody, components: [...dmBody.components, row.toJSON()] });
         } catch (e) {
-          console.error("DM closed message failed:", e);
+          console.error("DM closed+rating failed:", e);
         }
 
-        // Transcript plain text DM
         try {
           await sendPlainTranscriptToDM(client, openerId, channel.id, transcriptText);
         } catch (e) {
           console.error("DM transcript failed:", e);
-        }
-
-        // Rating DM (component + buttons) — separate message, so transcript stays plain text
-        try {
-          const rateMsg = layoutMessage(
-            `## ⭐ **Rate your experience (optional)**\n` +
-              `> Click a number below (1–5).`
-          );
-          const row = ratingRow(channel.id, openerId, handlerId);
-          await postRawDM(client, openerId, { ...rateMsg, components: [...rateMsg.components, row.toJSON()] });
-        } catch (e) {
-          console.error("DM rating message failed:", e);
         }
       }
 
