@@ -14,7 +14,7 @@ import fs from "fs";
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------------- DASHBOARD LAYOUT ----------------
+// ---------------- DASHBOARD LAYOUT (PUBLIC MESSAGE; COMPONENT-BASED OK) ----------------
 const DASHBOARD_LAYOUT = {
   flags: 32768,
   components: [
@@ -35,9 +35,8 @@ const DASHBOARD_LAYOUT = {
         {
           type: 10,
           content:
-            "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last. "
+            "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last."
         },
-        // removed divider between text and dropdown ✅
         {
           type: 1,
           components: [
@@ -46,7 +45,7 @@ const DASHBOARD_LAYOUT = {
               custom_id: "dashboard_main_select",
               placeholder: "Select an option…",
               options: [
-                { label: "Studio Regulations", value: "regulations" }, // above support ✅
+                { label: "Studio Regulations", value: "regulations" },
                 { label: "Support", value: "support" }
               ]
             }
@@ -140,40 +139,38 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   };
 }
 
-// ---------------- STUDIO REGULATIONS (NORMAL EMBEDS) ----------------
-const STUDIO_REGULATIONS_EMBEDS = {
-  embeds: [
-    {
-      image: {
-        url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
-      }
-    },
-    {
-      description:
-        "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
-        "1. **`Respect All Members`**\n" +
-        "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
-        "2. **`Spam & Flooding`**\n" +
-        "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
-        "3. **`Proper Channel Usage`**\n" +
-        "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
-        "4. **`Advertising & Promotion`**\n" +
-        "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
-        "5. **`Roblox & Discord Terms of Service`**\n" +
-        "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
-        "6. **`Leaking & Reselling`**\n" +
-        "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
-        "7. **`Staff Authority`**\n" +
-        "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
-        "8. **`Usernames & Avatars`**\n" +
-        "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
-        "9. **`NSFW & Inappropriate Content`**\n" +
-        "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
-        "10. **`Reporting Issues`**\n" +
-        "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
+// ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS ONLY) ----------------
+const STUDIO_REGULATIONS_EMBEDS = [
+  {
+    image: {
+      url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
     }
-  ]
-};
+  },
+  {
+    description:
+      "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
+      "1. **`Respect All Members`**\n" +
+      "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
+      "2. **`Spam & Flooding`**\n" +
+      "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
+      "3. **`Proper Channel Usage`**\n" +
+      "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
+      "4. **`Advertising & Promotion`**\n" +
+      "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
+      "5. **`Roblox & Discord Terms of Service`**\n" +
+      "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
+      "6. **`Leaking & Reselling`**\n" +
+      "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
+      "7. **`Staff Authority`**\n" +
+      "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
+      "8. **`Usernames & Avatars`**\n" +
+      "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
+      "9. **`NSFW & Inappropriate Content`**\n" +
+      "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
+      "10. **`Reporting Issues`**\n" +
+      "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
+  }
+];
 
 // ---------------- RAW REST SEND HELPERS ----------------
 async function postRaw(client, channelId, body, files = undefined) {
@@ -366,30 +363,37 @@ export async function handleDashboardInteractions(client, interaction) {
     const selected = interaction.values?.[0];
     console.log("[DASHBOARD] main select:", selected, "by", interaction.user?.id);
 
-    // ✅ Studio Regulations (NORMAL EMBED — NOT EPHEMERAL)
+    // ✅ Studio Regulations (EPHEMERAL EMBED)
     if (selected === "regulations") {
       try {
         return await interaction.reply({
-          ...STUDIO_REGULATIONS_EMBEDS,
+          ephemeral: true,
+          embeds: STUDIO_REGULATIONS_EMBEDS,
           allowedMentions: { parse: [] }
         });
-      } catch (e) {
-        console.error("[REGULATIONS] reply failed:", e);
-        // fallback (in case already replied/deferred)
+      } catch (err) {
+        console.error("[REGULATIONS] reply failed:", err);
+
+        // If already replied (rare), do an ephemeral followUp
         try {
           if (interaction.deferred || interaction.replied) {
             return await interaction.followUp({
-              content: "⚠️ Failed to send regulations embed.",
-              ephemeral: true
+              ephemeral: true,
+              embeds: STUDIO_REGULATIONS_EMBEDS,
+              allowedMentions: { parse: [] }
             });
           }
-          return await interaction.reply({
-            content: "⚠️ Failed to send regulations embed.",
-            ephemeral: true
-          });
-        } catch (e2) {
-          console.error("[REGULATIONS] fallback failed:", e2);
+        } catch (err2) {
+          console.error("[REGULATIONS] followUp failed:", err2);
         }
+
+        // last fallback
+        try {
+          return await interaction.reply({
+            ephemeral: true,
+            content: "⚠️ Failed to send Studio Regulations. Please try again."
+          });
+        } catch {}
         return;
       }
     }
