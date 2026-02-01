@@ -1,377 +1,381 @@
-// Features/payment.js
+// /Features/payment.js
 import fs from "fs";
-import {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
-} from "discord.js";
-import { Routes } from "discord-api-types/v10";
 import noblox from "noblox.js";
+import { SlashCommandBuilder } from "discord.js";
 
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------------- ROBLOX LOGIN (ONCE) ----------------
-let loginPromise = null;
-
-async function ensureRobloxLogin() {
-  if (loginPromise) return loginPromise;
-
-  loginPromise = (async () => {
-    const cookie = process.env.ROBLOX_COOKIE;
-    if (!cookie) throw new Error("Missing ROBLOX_COOKIE environment variable.");
-
-    // Silence noblox deprecation warning spam
-    noblox.setOptions({ show_deprecation_warnings: false });
-
-    const me = await noblox.setCookie(cookie);
-    console.log(`✅ [PAYMENT] Roblox logged in as ${me.UserName} (${me.UserID})`);
-    return me;
-  })();
-
-  return loginPromise;
-}
+// ---------------- STATE ----------------
+let robloxLoggedIn = false;
+let slashRegistered = false;
 
 // ---------------- HELPERS ----------------
-function parsePrice(input) {
-  const n = Number(String(input ?? "").trim());
+const nowUnix = () => Math.floor(Date.now() / 1000);
+
+function clampPrice(price, maxPrice) {
+  const n = Number(price);
   if (!Number.isFinite(n)) return null;
+  if (n < 0) return 0;
+  if (maxPrice && n > maxPrice) return maxPrice;
   return Math.floor(n);
 }
 
-function toUnix(d) {
-  return Math.floor(new Date(d).getTime() / 1000);
+function hasRole(member, roleId) {
+  if (!roleId) return false;
+  const roles = member?.roles?.cache ?? member?.roles;
+  return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 }
 
-function robloxProfileLink(userId) {
-  return `https://www.roblox.com/users/${userId}/profile`;
-}
+async function ensureRobloxLogin() {
+  if (robloxLoggedIn) return;
 
-async function safeFetchChannel(client, id) {
-  if (!id) return null;
-  return client.channels.fetch(id).catch(() => null);
-}
-
-async function getAssetInfo(assetId) {
-  // Best-effort current info (price + sale status)
+  // Hide the deprecation spam
   try {
-    const info = await noblox.getProductInfo(Number(assetId));
-    const price =
-      info?.PriceInRobux ??
-      info?.priceInRobux ??
-      info?.price ??
-      null;
+    noblox.setOptions({ show_deprecation_warnings: false });
+  } catch {}
 
-    const isForSale =
-      info?.IsForSale ??
-      info?.isForSale ??
-      null;
+  const cookie = process.env.ROBLOX_COOKIE;
+  if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var in Railway.");
 
-    return { price, isForSale };
-  } catch {
-    return { price: null, isForSale: null };
-  }
+  // Must await this BEFORE calling any authenticated methods
+  const currentUser = await noblox.setCookie(cookie);
+  robloxLoggedIn = true;
+
+  console.log(`✅ [PAYMENT] Roblox logged in as ${currentUser?.UserName ?? "Unknown"} (${currentUser?.UserID ?? "?"})`);
 }
 
-/**
- * Sets t-shirt price using configureItem():
- * - price >= 1 => sets that robux price
- * - price <= 0 => offsale (sellForRobux: false)
- */
-async function setShirtPrice(assetId, price) {
+async function safeGetProductInfo(assetId) {
+  // noblox.getProductInfo returns different key casing sometimes
+  const info = await noblox.getProductInfo(Number(assetId));
+  const name =
+    info?.Name ??
+    info?.name ??
+    info?.AssetName ??
+    info?.assetName ??
+    "Item";
+
+  const description =
+    info?.Description ??
+    info?.description ??
+    "";
+
+  return { raw: info, name: String(name), description: String(description) };
+}
+
+async function configureShirtPrice({ assetId, price }) {
+  // configureItem requires name + description in your noblox version
+  const { name, description } = await safeGetProductInfo(assetId);
+
+  // price <= 0 => offsale (sellForRobux=false)
   const sellForRobux = price >= 1 ? price : false;
 
-  // configureItem(assetId, name, description, enableComments, sellForRobux, genreSelection)
-  return noblox.configureItem(
+  // configureItem(assetId, name, description, enableComments?, sellForRobux?, genreSelection?)
+  await noblox.configureItem(
     Number(assetId),
-    undefined,
-    undefined,
+    name,
+    description,
     undefined,
     sellForRobux,
     undefined
   );
+
+  return { name, description, onSale: price >= 1 };
 }
 
-async function getRecentSalesForAsset(groupId, assetId, limit = 50) {
-  // Purchases are NOT in audit log. They're in group transactions: "Sale"
-  const page = await noblox.getGroupTransactions(
-    Number(groupId),
-    "Sale",
-    undefined,
-    "Desc",
-    Number(limit)
-  );
+async function getRecentGroupSales(groupId, limit = 3) {
+  // IMPORTANT:
+  // Purchases are NOT in "audit log". For group-owned clothing, the closest is group transactions ("Sale").
+  // We try several shapes because noblox versions differ.
+  try {
+    if (!groupId) return [];
 
-  const data = Array.isArray(page) ? page : (page?.data ?? []);
-  const filtered = data.filter((t) => {
-    const id =
-      t?.details?.id ??
-      t?.details?.assetId ??
-      t?.details?.Id ??
-      t?.assetId ??
-      null;
+    // Some versions: getGroupTransactions(groupId, transactionType, limit)
+    if (typeof noblox.getGroupTransactions === "function") {
+      const res = await noblox.getGroupTransactions(Number(groupId), "Sale", limit);
+      // res might be {data:[...]} or [...]
+      const data = Array.isArray(res) ? res : (res?.data ?? []);
+      return data.slice(0, limit);
+    }
 
-    return Number(id) === Number(assetId);
-  });
-
-  return filtered.slice(0, 3);
+    return [];
+  } catch (e) {
+    console.warn("⚠️ [PAYMENT] Could not fetch group transactions:", e?.message ?? e);
+    return [];
+  }
 }
 
-function formatTxn(txn) {
+function formatUserLinkFromTransaction(tx) {
+  // Different payloads across versions. Try to find a user id and name.
   const userId =
-    txn?.agent?.id ??
-    txn?.agent?.userId ??
-    txn?.agent?.Id ??
-    txn?.agentId ??
-    txn?.userId ??
+    tx?.agent?.id ??
+    tx?.agent?.userId ??
+    tx?.agentUserId ??
+    tx?.details?.seller?.id ??
+    tx?.details?.buyer?.id ??
+    tx?.user?.id ??
+    tx?.userId ??
     null;
 
-  const userName =
-    txn?.agent?.name ??
-    txn?.agent?.username ??
-    txn?.agent?.Name ??
-    txn?.agentName ??
+  const username =
+    tx?.agent?.name ??
+    tx?.agent?.username ??
+    tx?.details?.seller?.name ??
+    tx?.details?.buyer?.name ??
+    tx?.user?.name ??
+    tx?.username ??
     "User";
 
-  const amount =
-    txn?.currency?.amount ??
-    txn?.amount ??
-    txn?.details?.amount ??
-    txn?.robux ??
-    "Unknown";
+  if (!userId) return `**${username}**`;
 
-  const created =
-    txn?.created ??
-    txn?.createdDate ??
-    txn?.createdTime ??
-    txn?.date ??
-    null;
-
-  const ts = created ? `<t:${toUnix(created)}:F>` : "*Unknown*";
-  const link = userId ? robloxProfileLink(userId) : "https://www.roblox.com/";
-
-  return { userId, userName, amount, ts, link };
+  const url = `https://www.roblox.com/users/${userId}/profile`;
+  return `[${username}](${url})`;
 }
 
-function buildEmbed({ currentPrice, onSale, updatedUnix, recent }) {
-  const lines = [];
+function getAmountFromTransaction(tx) {
+  // Group transactions usually have "amount" or "currency" fields.
+  return (
+    tx?.amount ??
+    tx?.details?.amount ??
+    tx?.details?.robux ??
+    tx?.robux ??
+    tx?.currency?.amount ??
+    "?"
+  );
+}
 
-  lines.push("## Gamepass History");
-  lines.push(`**Current Price:** ${currentPrice === null ? "Unknown" : `${currentPrice} R$`}`);
-  lines.push(`**On Sale:** ${onSale === null ? "Unknown" : (onSale ? "Yes" : "No")}`);
-  lines.push(`**Last Updated:** <t:${updatedUnix}:F>`);
+function getUnixFromTransaction(tx) {
+  // Might be ISO string or unix ms
+  const raw =
+    tx?.created ??
+    tx?.createdAt ??
+    tx?.created_at ??
+    tx?.date ??
+    tx?.timestamp ??
+    null;
+
+  if (!raw) return null;
+
+  if (typeof raw === "number") {
+    // could be ms
+    return raw > 10_000_000_000 ? Math.floor(raw / 1000) : raw;
+  }
+
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
+}
+
+function buildPaymentResultEmbed({ assetName, newPrice, onSale, transactions }) {
+  const updatedTs = nowUnix();
+
+  const lines = [];
+  lines.push("## Gamepass History"); // keeping your header style
+  lines.push(`**Current Price:** ${onSale ? `**${newPrice}**` : "**Offsale**"}`);
+  lines.push(`**On Sale:** ${onSale ? "**Yes**" : "**No**"}`);
+  lines.push(`**Last Updated:** <t:${updatedTs}:F>`);
   lines.push("");
   lines.push("## Recent Transactions");
 
-  if (!recent.length) {
-    lines.push("*No recent sales found for this item.*");
+  if (!transactions || transactions.length === 0) {
+    lines.push("> No recent transactions found (or Roblox blocked access).");
   } else {
-    recent.forEach((tx, i) => {
-      const f = formatTxn(tx);
-      lines.push(`**\`${i + 1}\`** [${f.userName}](${f.link})`);
-      lines.push(`> - **Amount:** ${f.amount}`);
-      lines.push(`> - **Purchased:** ${f.ts}`);
+    const top = transactions.slice(0, 3);
+    top.forEach((tx, idx) => {
+      const userLink = formatUserLinkFromTransaction(tx);
+      const amount = getAmountFromTransaction(tx);
+      const unix = getUnixFromTransaction(tx);
+      const ts = unix ? `<t:${unix}:F>` : "`Unknown time`";
+
+      lines.push(`**\`${idx + 1}\`** ${userLink}`);
+      lines.push(`> - **Amount:** ${amount}`);
+      lines.push(`> - **Purchased:** ${ts}`);
       lines.push("");
     });
   }
 
-  return new EmbedBuilder()
-    .setColor(null)
-    .setDescription(lines.join("\n"));
+  return {
+    embeds: [
+      {
+        description: `**${assetName}**\n\n${lines.join("\n")}`
+      }
+    ]
+  };
 }
 
-// ---------------- CORE RUNNER ----------------
-async function runPayment(client, ctx, priceRaw) {
-  const config = readConfig();
-  const p = config.payment;
+function buildLogEmbed({ staffId, assetId, assetName, newPrice, onSale }) {
+  return {
+    embeds: [
+      {
+        title: "✅ Payment Price Updated",
+        description:
+          `**Staff:** <@${staffId}>\n` +
+          `**Asset:** **${assetName}** (\`${assetId}\`)\n` +
+          `**New Price:** ${onSale ? `**${newPrice}**` : "**Offsale**"}\n` +
+          `**Time:** <t:${nowUnix()}:F>`
+      }
+    ]
+  };
+}
 
-  if (!p) {
-    const msg = "❌ Missing `payment` section in config.json.";
-    if (ctx.reply) return ctx.reply(msg).catch(() => {});
+async function sendToChannel(client, channelId, payload) {
+  if (!channelId) return;
+  const ch = await client.channels.fetch(channelId).catch(() => null);
+  if (!ch) return;
+  await ch.send(payload).catch(() => {});
+}
+
+// ---------------- COMMAND CORE ----------------
+async function runPaymentChange(client, interactionOrMessage, priceInput) {
+  const conf = readConfig().payment;
+
+  const assetId = conf?.assetId;
+  const groupId = conf?.groupId;
+  const allowedRoleId = conf?.allowedRoleId;
+  const logChannelId = conf?.logChannelId;
+  const maxPrice = conf?.maxPrice ?? 100000;
+
+  if (!assetId) throw new Error("Missing payment.assetId in config.json");
+  if (!allowedRoleId) throw new Error("Missing payment.allowedRoleId in config.json");
+  if (!logChannelId) throw new Error("Missing payment.logChannelId in config.json");
+
+  // Permission check
+  const member = interactionOrMessage?.member;
+  if (!hasRole(member, allowedRoleId)) {
+    const deny = { content: "❌ You do not have permission to use this command." };
+    if (interactionOrMessage?.reply) return interactionOrMessage.reply(deny).catch(() => {});
+    if (interactionOrMessage?.channel?.send) return interactionOrMessage.channel.send(deny).catch(() => {});
     return;
   }
 
-  const assetId = String(p.assetId ?? "").trim();
-  const groupId = String(p.groupId ?? "").trim();
-  const allowedRoleId = String(p.allowedRoleId ?? "").trim();
-  const logChannelId = String(p.logChannelId ?? "").trim();
-  const maxPrice = Number(p.maxPrice ?? 100000);
-
-  if (!assetId || !groupId || !allowedRoleId || !logChannelId) {
-    const msg =
-      "❌ payment config missing one of: assetId, groupId, allowedRoleId, logChannelId";
-    if (ctx.isChatInputCommand?.()) {
-      return ctx.reply({ content: msg, ephemeral: true }).catch(() => {});
-    }
-    return ctx.reply(msg).catch(() => {});
+  const clamped = clampPrice(priceInput, maxPrice);
+  if (clamped === null) {
+    const bad = { content: `❌ Invalid price. Example: \`${conf?.prefix ?? "-"}payment 250\` or \`/payment price:250\`` };
+    if (interactionOrMessage?.reply) return interactionOrMessage.reply(bad).catch(() => {});
+    if (interactionOrMessage?.channel?.send) return interactionOrMessage.channel.send(bad).catch(() => {});
+    return;
   }
 
-  // Role check
-  const member = ctx.member;
-  const hasRole = member?.roles?.cache?.has?.(allowedRoleId) ?? false;
-  if (!hasRole) {
-    const msg = "❌ You do not have permission to use this command.";
-    if (ctx.isChatInputCommand?.()) {
-      return ctx.reply({ content: msg, ephemeral: true }).catch(() => {});
-    }
-    return ctx.reply(msg).catch(() => {});
+  await ensureRobloxLogin();
+
+  // Update item
+  const { name, onSale } = await configureShirtPrice({
+    assetId: Number(assetId),
+    price: clamped
+  });
+
+  // Pull recent group sales (best-effort)
+  const transactions = await getRecentGroupSales(groupId, 3);
+
+  const resultEmbed = buildPaymentResultEmbed({
+    assetName: name,
+    newPrice: clamped,
+    onSale,
+    transactions
+  });
+
+  // Respond publicly (you requested public)
+  if (interactionOrMessage?.isChatInputCommand?.()) {
+    await interactionOrMessage.reply(resultEmbed).catch(() => {});
+  } else if (interactionOrMessage?.channel?.send) {
+    await interactionOrMessage.channel.send(resultEmbed).catch(() => {});
   }
 
-  const price = parsePrice(priceRaw);
-  if (price === null) {
-    const msg = `❌ Invalid price. Example: \`${p.prefix ?? "-"}payment 100\` or \`/payment price:100\``;
-    if (ctx.isChatInputCommand?.()) {
-      return ctx.reply({ content: msg, ephemeral: true }).catch(() => {});
-    }
-    return ctx.reply(msg).catch(() => {});
-  }
-
-  if (price < 0 || price > maxPrice) {
-    const msg = `❌ Price must be between 0 and ${maxPrice}.`;
-    if (ctx.isChatInputCommand?.()) {
-      return ctx.reply({ content: msg, ephemeral: true }).catch(() => {});
-    }
-    return ctx.reply(msg).catch(() => {});
-  }
-
-  // You said PUBLIC, not ephemeral
-  if (ctx.isChatInputCommand?.()) {
-    await ctx.deferReply({ ephemeral: false }).catch(() => {});
-  }
-
-  try {
-    await ensureRobloxLogin();
-
-    const before = await getAssetInfo(assetId);
-
-    // Change price (0 => offsale)
-    await setShirtPrice(assetId, price);
-
-    const updatedUnix = Math.floor(Date.now() / 1000);
-
-    const after = await getAssetInfo(assetId);
-
-    // If Roblox doesn't return quickly, we still show the intended result:
-    const currentPrice = after?.price ?? (price >= 1 ? price : 0);
-    const onSale = after?.isForSale ?? (price >= 1);
-
-    const recent = await getRecentSalesForAsset(groupId, assetId, 75);
-
-    const embed = buildEmbed({
-      currentPrice,
-      onSale,
-      updatedUnix,
-      recent
-    });
-
-    // Send response
-    if (ctx.isChatInputCommand?.()) {
-      await ctx.editReply({ embeds: [embed] }).catch(() => {});
-    } else {
-      await ctx.reply({ embeds: [embed] }).catch(() => {});
-    }
-
-    // Log to payment log channel
-    const actor =
-      ctx.user?.tag ??
-      ctx.author?.tag ??
-      "Unknown";
-
-    const logCh = await safeFetchChannel(client, logChannelId);
-    if (logCh) {
-      const logText =
-        `🧾 **Payment price updated**\n` +
-        `> **By:** ${actor}\n` +
-        `> **Asset:** \`${assetId}\`\n` +
-        `> **Price:** ${before?.price ?? "?"} → ${currentPrice}`;
-
-      await logCh.send({ content: logText, embeds: [embed] }).catch(() => {});
-    }
-  } catch (err) {
-    console.error("❌ [PAYMENT] error:", err);
-
-    const msg =
-      `❌ Failed to update shirt price.\n` +
-      `Reason: \`${err?.message ?? String(err)}\`\n\n` +
-      `Common causes:\n` +
-      `- The logged-in Roblox account does not own the shirt / lacks permission\n` +
-      `- Wrong assetId (not the t-shirt)\n` +
-      `- Roblox request rejected / rate-limited`;
-
-    if (ctx.isChatInputCommand?.()) {
-      if (ctx.deferred || ctx.replied) {
-        await ctx.editReply({ content: msg }).catch(() => {});
-      } else {
-        await ctx.reply({ content: msg, ephemeral: true }).catch(() => {});
-      }
-    } else {
-      await ctx.reply(msg).catch(() => {});
-    }
-  }
+  // Log
+  const staffId = interactionOrMessage?.user?.id ?? interactionOrMessage?.author?.id ?? "unknown";
+  await sendToChannel(
+    client,
+    logChannelId,
+    buildLogEmbed({
+      staffId,
+      assetId: String(assetId),
+      assetName: name,
+      newPrice: clamped,
+      onSale
+    })
+  );
 }
 
 // ---------------- REGISTER MODULE ----------------
 export default function registerPaymentModule(client) {
-  const config = readConfig();
-  const p = config.payment ?? {};
-  const prefix = String(p.prefix ?? "-").trim() || "-";
+  const conf = readConfig().payment;
 
-  // Register guild slash command (instant)
-  client.once("ready", async () => {
+  // 1) Prefix: -payment 250
+  client.on("messageCreate", async (msg) => {
     try {
-      const guildId = config.guildId;
-      if (!guildId) {
-        console.error("❌ [PAYMENT] Missing guildId in config.json");
-        return;
+      if (!msg.guild || msg.author.bot) return;
+
+      const prefix = conf?.prefix ?? "-";
+      const raw = msg.content?.trim() ?? "";
+      if (!raw.toLowerCase().startsWith(`${prefix}payment`)) return;
+
+      const parts = raw.split(/\s+/);
+      const price = parts[1];
+      if (!price) {
+        return msg.channel.send({ content: `Usage: \`${prefix}payment 250\`` }).catch(() => {});
       }
 
-      const cmd = new SlashCommandBuilder()
-        .setName("payment")
-        .setDescription("Change the t-shirt price (Roblox) and show sales summary.")
-        .addIntegerOption((opt) =>
-          opt
-            .setName("price")
-            .setDescription("New price in Robux (0 = offsale)")
-            .setRequired(true)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages);
-
-      await client.rest.put(
-        Routes.applicationGuildCommands(client.user.id, guildId),
-        { body: [cmd.toJSON()] }
-      );
-
-      console.log("✅ Payment slash command registered to guild");
+      await runPaymentChange(client, msg, price);
     } catch (e) {
-      console.error("❌ [PAYMENT] Failed to register slash command:", e);
+      console.error("❌ [PAYMENT] prefix error:", e);
+      await msg.channel
+        .send({
+          content:
+            "❌ Failed to update shirt price.\n" +
+            `Reason: \`${e?.message ?? "Unknown error"}\``
+        })
+        .catch(() => {});
     }
   });
 
-  // Slash handler
+  // 2) Slash: /payment price: 250
+  client.once("ready", async () => {
+    try {
+      if (slashRegistered) return;
+      slashRegistered = true;
+
+      const root = readConfig();
+      const guildId = root.guildId;
+
+      const cmd = new SlashCommandBuilder()
+        .setName("payment")
+        .setDescription("Update the Roblox shirt price (staff only).")
+        .addIntegerOption((opt) =>
+          opt
+            .setName("price")
+            .setDescription("New price (0 = offsale)")
+            .setRequired(true)
+        );
+
+      // Guild command = instant updates
+      if (client.application?.commands && guildId) {
+        await client.application.commands.create(cmd, guildId);
+      } else if (client.application?.commands) {
+        // fallback global
+        await client.application.commands.create(cmd);
+      }
+
+      console.log("✅ Payment module registered");
+    } catch (e) {
+      console.error("❌ [PAYMENT] slash register failed:", e);
+    }
+  });
+
   client.on("interactionCreate", async (interaction) => {
-    if (!interaction.isChatInputCommand?.()) return;
-    if (interaction.commandName !== "payment") return;
+    try {
+      if (!interaction.isChatInputCommand?.()) return;
+      if (interaction.commandName !== "payment") return;
 
-    const price = interaction.options.getInteger("price", true);
-    await runPayment(client, interaction, price);
+      const price = interaction.options.getInteger("price", true);
+      await runPaymentChange(client, interaction, price);
+    } catch (e) {
+      console.error("❌ [PAYMENT] slash error:", e);
+      await interaction
+        .reply({
+          content:
+            "❌ Failed to update shirt price.\n" +
+            `Reason: \`${e?.message ?? "Unknown error"}\``
+        })
+        .catch(() => {});
+    }
   });
-
-  // Prefix handler: -payment 100 (uses config.payment.prefix)
-  client.on("messageCreate", async (message) => {
-    if (!message.guild || message.author.bot) return;
-
-    const raw = message.content.trim();
-    const lower = raw.toLowerCase();
-
-    // supports: "-payment 100" where prefix is "-"
-    const cmd = `${prefix}payment`;
-    if (!lower.startsWith(cmd)) return;
-
-    const parts = raw.split(/\s+/);
-    const price = parts[1];
-
-    await runPayment(client, message, price);
-  });
-
-  console.log("✅ Payment module registered");
 }
