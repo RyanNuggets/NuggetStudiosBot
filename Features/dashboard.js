@@ -78,7 +78,7 @@ const DASHBOARD_LAYOUT = {
 // ---------------- TICKET TYPES ----------------
 const TICKET_TYPES = [
   { label: "General", value: "general" },
-  { label: "Management", value: "management" }
+  { label: "Operations", value: "operations" }
 ];
 
 const ticketTypeLabel = (value) =>
@@ -471,7 +471,7 @@ export async function handleDashboardInteractions(client, interaction) {
     if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
 
     const staffRoleId =
-      ticketTypeValue === "management" ? conf.managementRoleId : conf.supportRoleId;
+      ticketTypeValue === "operations" ? conf.managementRoleId : conf.supportRoleId;
 
     if (!staffRoleId) {
       return interaction.reply({
