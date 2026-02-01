@@ -749,24 +749,23 @@ export async function handleOrderHubInteractions(client, interaction) {
       const openerId = getOrderUserFromTopic(channel.topic ?? "");
       if (!openerId) return interaction.reply({ content: "Could not find the order owner.", ephemeral: true });
 
-      // only the customer can decide review/skip
-      if (interaction.user.id !== openerId) {
-        return interaction.reply({ content: "Only the customer can use these buttons.", ephemeral: true });
+      // Leave a Review -> ONLY opener
+      if (interaction.customId === IDS.reviewLeaveBtn) {
+        if (interaction.user.id !== openerId) {
+          return interaction.reply({ content: "Only the customer can use these buttons.", ephemeral: true });
+        }
+
+        REVIEW_STATE.set(`${channel.id}:${interaction.user.id}`, {
+          userId: interaction.user.id,
+          orderChannelId: channel.id
+        });
+
+        return interaction.reply(buildDesignerPickerEphemeral());
       }
 
-      // skip -> close now
-      if (interaction.customId === IDS.reviewSkipBtn) {
-        await interaction.reply({ content: "Closing without review…", ephemeral: true }).catch(() => {});
-        return closeOrderNow(client, interaction, channel, oh);
-      }
-
-      // leave -> start flow
-      REVIEW_STATE.set(`${channel.id}:${interaction.user.id}`, {
-        userId: interaction.user.id,
-        orderChannelId: channel.id
-      });
-
-      return interaction.reply(buildDesignerPickerEphemeral());
+      // Close Without Review -> allow anyone (staff can close inactive tickets)
+      await interaction.reply({ content: "Closing without review…", ephemeral: true }).catch(() => {});
+      return closeOrderNow(client, interaction, channel, oh);
     }
   }
 
