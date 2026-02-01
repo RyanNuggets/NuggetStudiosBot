@@ -25,12 +25,6 @@
   "reviewChannelId": "1467248480249450580"
 },
 
-  "payment": {
-    "assetId": 1117747196,
-    "allowedRoleId": "",
-    "logChannelId": ""
-},
-
 "payment": {
   "assetId": "70853736927027",
   "groupId": "863973320",
@@ -39,7 +33,7 @@
   "prefix": "-",
   "maxPrice": 100000
 },
-  
+
   "welcome": {
     "enabled": true,
     "channelId": "1466860445653795007"
