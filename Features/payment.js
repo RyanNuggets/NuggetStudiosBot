@@ -3,134 +3,151 @@ import noblox from "noblox.js";
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import fs from "fs";
 
+// ---------- CONFIG ----------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
+// ---------- ROBLOX LOGIN ----------
 let robloxLoggedIn = false;
-
-async function robloxLogin(force = false) {
-  if (robloxLoggedIn && !force) return;
-  
-  console.log(`[DEBUG] ${force ? 'RE-LOGGING' : 'Logging'} into Roblox...`);
+async function robloxLogin() {
+  if (robloxLoggedIn) return;
   const cookie = process.env.ROBLOX_COOKIE;
   if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var.");
 
   noblox.setOptions({ show_deprecation_warnings: false });
-
   try {
-    // We clear the session if forcing a re-login
-    const currentUser = await noblox.setCookie(cookie);
-    console.log(`✅ [PAYMENT] Authenticated as: ${currentUser.UserName} (${currentUser.UserID})`);
+    const me = await noblox.setCookie(cookie);
+    console.log(`✅ [PAYMENT] Authenticated: ${me.UserName} (${me.UserID})`);
     robloxLoggedIn = true;
   } catch (e) {
-    console.error(`[DEBUG] Login Failed: ${e.message}`);
-    throw new Error("Invalid Cookie or Session Expired.");
+    throw new Error("Roblox login failed. Check your cookie.");
   }
 }
 
-async function safeGetProductInfo(assetId) {
-  try {
-    return await noblox.getProductInfo(Number(assetId));
-  } catch (e) {
-    console.error(`[DEBUG] Info Fetch Error: ${e.message}`);
+// ---------- THE ULTIMATE UPDATE FUNCTION ----------
+async function updateRobloxPrice(assetId, newPrice) {
+  console.log(`[DEBUG] Target ID: ${assetId} | New Price: ${newPrice}`);
+
+  // 1. Get Product Info to find the internal ProductID
+  const info = await noblox.getProductInfo(Number(assetId)).catch(e => {
+    console.error("[DEBUG] Failed to fetch info:", e.message);
     return null;
-  }
-}
+  });
 
-async function configurePrice(assetId, newPrice, info) {
-  const assetType = info.AssetTypeId;
-  console.log(`[DEBUG] Attempting update for ${info.Name} (Type: ${assetType})`);
+  if (!info) throw new Error("Could not find item info on Roblox.");
+
+  // For long IDs, we MUST use ProductId for economy changes
+  const targetId = info.ProductId || assetId;
+  const isGamepass = info.AssetTypeId === 34;
+
+  console.log(`[DEBUG] Name: ${info.Name} | ProductID: ${targetId} | Type: ${info.AssetTypeId}`);
 
   try {
-    if (assetType === 34) {
+    if (isGamepass) {
+      console.log("[DEBUG] Updating as Gamepass...");
       await noblox.setGamepassPrice(Number(assetId), Number(newPrice));
     } else {
-      // THE FIX: We use a more "raw" call logic by ensuring name/desc are strings
-      // and checking the sale status.
+      console.log("[DEBUG] Updating as Clothing Item...");
+      // Using the more reliable update method
       await noblox.configureItem(
         Number(assetId),
         String(info.Name),
-        String(info.Description || "Updated by Bot"),
+        String(info.Description || ""),
         false, // enableComments
-        Number(newPrice),
-        "All" // genre
+        Number(newPrice)
       );
     }
+    return info;
   } catch (err) {
-    // If it fails with [0], we try to refresh the session once
-    if (err.message.includes("[0]") || err.message.includes("403")) {
-        console.log("[DEBUG] Hit Error [0]. Attempting session refresh and retry...");
-        await robloxLogin(true); // Force re-log to get fresh CSRF
-        
-        // Final attempt
-        return await noblox.configureItem(
-            Number(assetId),
-            String(info.Name),
-            String(info.Description || "Updated by Bot"),
-            false,
-            Number(newPrice)
-        );
+    console.error(`[DEBUG] Internal Roblox Rejection:`, err);
+    
+    // Final fallback: If configureItem fails with [0], it's a Permission/API sync issue
+    if (err.message.includes("[0]")) {
+      throw new Error("Roblox rejected the update (Error 0). Even if you have perms, Roblox often blocks automated price changes on 'New' Asset IDs via this API. Try using a Gamepass instead of a Shirt for the payment.");
     }
     throw err;
   }
 }
 
-export default function registerPaymentModule(client) {
+// ---------- RUN CHANGE ----------
+async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = false) {
   const cfg = readConfig();
   const pay = cfg.payment;
+
+  // Use BigInt conversion for safety, then back to Number for noblox
+  const assetId = String(pay.assetId).replace(/['"]/g, ''); 
+  const allowedRole = pay.allowedRoleId;
+
+  // Permission Check
+  if (allowedRole && !messageOrInteraction.member.roles.cache.has(allowedRole)) {
+    const msg = "❌ You don't have the required role.";
+    return isInteraction ? messageOrInteraction.reply({ content: msg, ephemeral: true }) : messageOrInteraction.reply(msg);
+  }
+
+  const price = parseInt(priceRaw);
+  if (isNaN(price) || price < 0) {
+    return isInteraction ? messageOrInteraction.reply("❌ Invalid price.") : messageOrInteraction.reply("❌ Invalid price.");
+  }
+
+  await robloxLogin();
+
+  try {
+    const info = await updateRobloxPrice(assetId, price);
+
+    const embed = new EmbedBuilder()
+      .setTitle("✅ Price Updated")
+      .setColor(0x00FF00)
+      .setDescription(`Successfully updated **${info.Name}**`)
+      .addFields(
+        { name: "New Price", value: `${price} Robux`, inline: true },
+        { name: "Asset ID", value: `\`${assetId}\``, inline: true }
+      )
+      .setTimestamp();
+
+    await (isInteraction ? messageOrInteraction.reply({ embeds: [embed] }) : messageOrInteraction.reply({ embeds: [embed] }));
+
+    // Log Channel
+    if (pay.logChannelId) {
+      const channel = messageOrInteraction.client.channels.cache.get(pay.logChannelId);
+      if (channel) {
+        const user = isInteraction ? messageOrInteraction.user.tag : messageOrInteraction.author.tag;
+        channel.send(`🛠️ **Price Log:** ${user} changed price to ${price} for \`${info.Name}\`.`);
+      }
+    }
+
+  } catch (err) {
+    const reason = err.message;
+    const content = `❌ **Failed to update price.**\nReason: \`${reason}\``;
+    if (isInteraction) {
+      if (messageOrInteraction.replied) await messageOrInteraction.followUp({ content, ephemeral: true });
+      else await messageOrInteraction.reply({ content, ephemeral: true });
+    } else {
+      await messageOrInteraction.reply(content);
+    }
+  }
+}
+
+// ---------- REGISTER ----------
+export default function registerPaymentModule(client) {
+  const cfg = readConfig();
+  const prefix = cfg.payment?.prefix || "-";
 
   client.once("ready", async () => {
     const cmd = new SlashCommandBuilder()
       .setName("payment")
-      .setDescription("Change the price of the payment shirt")
+      .setDescription("Change the price of the payment item.")
       .addIntegerOption(o => o.setName("price").setDescription("Robux amount").setRequired(true));
     await client.application.commands.create(cmd).catch(() => {});
+    console.log("✅ Payment Module Loaded");
   });
-
-  async function runChange(context, priceRaw, isInteraction) {
-    console.log(`[DEBUG] Command triggered by ${isInteraction ? context.user.tag : context.author.tag}`);
-    
-    try {
-      await robloxLogin();
-      
-      const info = await safeGetProductInfo(pay.assetId);
-      if (!info) throw new Error("Could not find asset info.");
-
-      await configurePrice(pay.assetId, priceRaw, info);
-
-      const embed = new EmbedBuilder()
-        .setTitle("✅ Price Updated Successfully")
-        .setColor(0x00FF00)
-        .addFields(
-          { name: "Item", value: info.Name, inline: true },
-          { name: "New Price", value: `${priceRaw} Robux`, inline: true }
-        )
-        .setTimestamp();
-
-      return isInteraction ? context.reply({ embeds: [embed] }) : context.reply({ embeds: [embed] });
-
-    } catch (err) {
-      console.error(`[FINAL ERROR]`, err);
-      const msg = `❌ **Error:** ${err.message.includes("[0]") ? "Roblox rejected the request. Try logging into the bot on a browser once to solve the captcha/challenge, then restart the bot." : err.message}`;
-      
-      if (isInteraction) {
-        if (context.replied) await context.followUp({ content: msg, ephemeral: true });
-        else await context.reply({ content: msg, ephemeral: true });
-      } else {
-        await context.reply(msg);
-      }
-    }
-  }
 
   client.on("interactionCreate", async (i) => {
     if (!i.isChatInputCommand() || i.commandName !== "payment") return;
-    await runChange(i, i.options.getInteger("price"), true);
+    await runPaymentChange(i, i.options.getInteger("price"), true);
   });
 
   client.on("messageCreate", async (m) => {
-    const prefix = pay.prefix || "-";
     if (m.author.bot || !m.content.startsWith(prefix + "payment")) return;
-    const price = parseInt(m.content.split(" ")[1]);
-    if (isNaN(price)) return m.reply("Usage: -payment <number>");
-    await runChange(m, price, false);
+    const args = m.content.split(" ");
+    await runPaymentChange(m, args[1], false);
   });
 }
