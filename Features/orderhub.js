@@ -45,10 +45,6 @@ const IDS = {
 // review state: key = `${channelId}:${userId}`
 const REVIEW_STATE = new Map();
 
-// ---------------- BRAND ----------------
-const BRAND_IMAGE =
-  "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165";
-
 // Your custom emoji (NOTE: requires Use External Emojis if not from this server)
 const STAR_EMOJI = "<:star:1467246556649623694>";
 const STAR_EMOJI_OBJ = { id: "1467246556649623694", name: "star" };
@@ -60,7 +56,16 @@ const ORDER_HUB_LAYOUT = {
     {
       type: 17,
       components: [
-        { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1467051814733222043/1467567443873632482/NS_Order_Hub.png?ex=6980da30&is=697f88b0&hm=87b020248f4ff3b76ee51012bc0753b49f70d8776236d83403c3cea2a5d460d8&=&format=webp&quality=lossless&width=1872&height=560"
+              }
+            }
+          ]
+        },
         { type: 14, spacing: 1 },
         {
           type: 10,
@@ -91,7 +96,11 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
     ephemeral: true,
     allowedMentions: { parse: [] },
     embeds: [
-      { image: { url: BRAND_IMAGE } },
+      {
+        image: {
+          url: "https://media.discordapp.net/attachments/1467051814733222043/1467572324994908200/NS_Banners.png?ex=6980debc&is=697f8d3c&hm=1e3b2b6480319ac248e56c48d2ba88bcdc01f52c9265d00c715e5986cb593d0f&=&format=webp&quality=lossless&width=1872&height=560"
+        }
+      },
       {
         description:
           "## **Payment Method**\n" +
@@ -207,7 +216,16 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
   components.push({
     type: 17,
     components: [
-      { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+      {
+        type: 12,
+        items: [
+          {
+            media: {
+              url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
+            }
+          }
+        ]
+      },
       { type: 14, spacing: 2 },
       { type: 10, content: contentMarkdown },
       { type: 14, spacing: 2 }
@@ -333,7 +351,16 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
       {
         type: 17,
         components: [
-          { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467572880345665757/NS_Order_Created.png?ex=6980df40&is=697f8dc0&hm=0e8df1a37a4a215e39be1444eea7ace23b715bcd01794fde76676159f6a10973&=&format=webp&quality=lossless&width=550&height=165"
+                }
+              }
+            ]
+          },
           { type: 14, spacing: 2 },
           {
             type: 10,
@@ -397,7 +424,16 @@ function buildClosePromptPayload(openerId) {
       {
         type: 17,
         components: [
-          { type: 12, items: [{ media: { url: BRAND_IMAGE } }] },
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
+                }
+              }
+            ]
+          },
           { type: 14, spacing: 1 },
           {
             type: 10,
@@ -488,7 +524,11 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
   return {
     allowed_mentions: { parse: ["users"] },
     embeds: [
-      { image: { url: BRAND_IMAGE } },
+      {
+        image: {
+          url: "https://media.discordapp.net/attachments/1467051814733222043/1467567459841212557/NS_Reviews.png?ex=6980da34&is=697f88b4&hm=1c2f5588610dea6021657aa0bd8ab51cce89cbf5997863f11e9439f92ef53fc0&=&format=webp&quality=lossless&width=1872&height=560"
+        }
+      },
       {
         description:
           `## New Order Review\n` +
