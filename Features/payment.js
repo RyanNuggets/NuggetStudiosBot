@@ -3,177 +3,134 @@ import noblox from "noblox.js";
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import fs from "fs";
 
-// ---------- CONFIG ----------
-const readConfig = () => {
-  console.log("[DEBUG] Reading config.json...");
-  return JSON.parse(fs.readFileSync("./config.json", "utf8"));
-};
+const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 
-// ---------- ROBLOX LOGIN ----------
 let robloxLoggedIn = false;
-async function robloxLogin() {
-  if (robloxLoggedIn) return;
-  console.log("[DEBUG] Attempting Roblox login...");
+
+async function robloxLogin(force = false) {
+  if (robloxLoggedIn && !force) return;
+  
+  console.log(`[DEBUG] ${force ? 'RE-LOGGING' : 'Logging'} into Roblox...`);
   const cookie = process.env.ROBLOX_COOKIE;
   if (!cookie) throw new Error("Missing ROBLOX_COOKIE env var.");
 
   noblox.setOptions({ show_deprecation_warnings: false });
-  await noblox.setCookie(cookie);
 
-  const me = await noblox.getAuthenticatedUser().catch(() => null);
-  console.log(`✅ [PAYMENT] Logged in as: ${me?.UserName ?? "Unknown"} (${me?.UserID ?? "ID Not Found"})`);
-  robloxLoggedIn = true;
-}
-
-// ---------- HELPERS ----------
-function hasRole(member, roleId) {
-  return roleId ? Boolean(member?.roles?.cache?.has(roleId)) : false;
-}
-
-function discordTs(dateLike) {
-  return `<t:${Math.floor(new Date(dateLike).getTime() / 1000)}:F>`;
+  try {
+    // We clear the session if forcing a re-login
+    const currentUser = await noblox.setCookie(cookie);
+    console.log(`✅ [PAYMENT] Authenticated as: ${currentUser.UserName} (${currentUser.UserID})`);
+    robloxLoggedIn = true;
+  } catch (e) {
+    console.error(`[DEBUG] Login Failed: ${e.message}`);
+    throw new Error("Invalid Cookie or Session Expired.");
+  }
 }
 
 async function safeGetProductInfo(assetId) {
-  console.log(`[DEBUG] Fetching product info for AssetID: ${assetId}`);
   try {
-    const info = await noblox.getProductInfo(Number(assetId));
-    console.log(`[DEBUG] Successfully fetched info for: "${info.Name}"`);
-    return info;
+    return await noblox.getProductInfo(Number(assetId));
   } catch (e) {
-    if (e.message.includes("429")) return "RATE_LIMITED";
-    console.error(`[DEBUG] Error fetching info: ${e.message}`);
+    console.error(`[DEBUG] Info Fetch Error: ${e.message}`);
     return null;
   }
 }
 
-// ---------- THE FIX: CONFIGURE PRICE ----------
 async function configurePrice(assetId, newPrice, info) {
-  const assetType = info.AssetTypeId; 
-  // AssetType 34 = Gamepass, 11 = Shirt, 12 = Pants
-  console.log(`[DEBUG] Asset Type detected: ${assetType} (Name: ${info.Name})`);
+  const assetType = info.AssetTypeId;
+  console.log(`[DEBUG] Attempting update for ${info.Name} (Type: ${assetType})`);
 
   try {
     if (assetType === 34) {
-      console.log(`[DEBUG] Detected GAMEPASS. Using setGamepassPrice...`);
-      // Gamepasses need a different function
       await noblox.setGamepassPrice(Number(assetId), Number(newPrice));
     } else {
-      console.log(`[DEBUG] Detected CLOTHING/ITEM. Using configureItem...`);
-      console.log(`[DEBUG] Params: Name="${info.Name}", Desc="${info.Description || ""}", Price=${newPrice}`);
-      
+      // THE FIX: We use a more "raw" call logic by ensuring name/desc are strings
+      // and checking the sale status.
       await noblox.configureItem(
         Number(assetId),
         String(info.Name),
-        String(info.Description || ""),
-        null,
+        String(info.Description || "Updated by Bot"),
+        false, // enableComments
         Number(newPrice),
-        null
+        "All" // genre
       );
     }
-    console.log(`[DEBUG] Roblox update successful for Asset ${assetId}`);
   } catch (err) {
-    console.error(`[DEBUG] CRITICAL ERROR during update:`, err);
-    
-    if (err.message.includes("[0]")) {
-      throw new Error("Roblox Error [0]: Permission Denied. Ensure the bot has 'Configure Group Items' and the asset is a Group asset.");
+    // If it fails with [0], we try to refresh the session once
+    if (err.message.includes("[0]") || err.message.includes("403")) {
+        console.log("[DEBUG] Hit Error [0]. Attempting session refresh and retry...");
+        await robloxLogin(true); // Force re-log to get fresh CSRF
+        
+        // Final attempt
+        return await noblox.configureItem(
+            Number(assetId),
+            String(info.Name),
+            String(info.Description || "Updated by Bot"),
+            false,
+            Number(newPrice)
+        );
     }
     throw err;
   }
 }
 
-// ---------- RUN CHANGE ----------
-async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = false) {
-  console.log(`[DEBUG] Starting runPaymentChange. Raw Price Input: ${priceRaw}`);
-  
-  const cfg = readConfig();
-  const pay = cfg.payment;
-  const { assetId, groupId, allowedRoleId, logChannelId } = pay;
-
-  // 1. Permission Check
-  const member = messageOrInteraction.member;
-  if (!hasRole(member, allowedRoleId)) {
-    console.log(`[DEBUG] User ${member.user.tag} denied access (Missing Role).`);
-    const content = "❌ You do not have permission.";
-    return isInteraction ? messageOrInteraction.reply({ content, ephemeral: true }) : messageOrInteraction.reply(content);
-  }
-
-  // 2. Login
-  try {
-    await robloxLogin();
-  } catch (e) {
-    console.error(`[DEBUG] Login step failed: ${e.message}`);
-    return messageOrInteraction.reply("❌ Roblox Login Failed.");
-  }
-
-  // 3. Asset Data Fetch
-  const info = await safeGetProductInfo(assetId);
-  if (info === "RATE_LIMITED") return messageOrInteraction.reply("❌ Rate limited by Roblox. Wait 5 mins.");
-  if (!info) return messageOrInteraction.reply(`❌ Could not find asset \`${assetId}\`.`);
-
-  // 4. Update
-  try {
-    const newPrice = Math.floor(Number(priceRaw));
-    console.log(`[DEBUG] Validated Price: ${newPrice}. Sending to Roblox...`);
-    
-    await configurePrice(assetId, newPrice, info);
-
-    // 5. Success UI
-    console.log(`[DEBUG] Building success embed...`);
-    const embed = new EmbedBuilder()
-      .setTitle("✅ Price Updated")
-      .setDescription(`Successfully set **${info.Name}** to **${newPrice} Robux**.`)
-      .addFields(
-        { name: "Asset ID", value: `\`${assetId}\``, inline: true },
-        { name: "Type", value: info.AssetTypeId === 34 ? "Gamepass" : "Clothing", inline: true }
-      )
-      .setTimestamp();
-
-    await messageOrInteraction.reply({ embeds: [embed] });
-
-    // 6. Logging to Discord Channel
-    if (logChannelId) {
-      const logCh = messageOrInteraction.client.channels.cache.get(logChannelId);
-      if (logCh) {
-        const actor = isInteraction ? messageOrInteraction.user.tag : messageOrInteraction.author.tag;
-        await logCh.send({ content: `🛠️ **Price Change:** \`${info.Name}\` set to \`${newPrice}\` by ${actor}` });
-      }
-    }
-
-  } catch (err) {
-    console.error(`[DEBUG] runPaymentChange caught error:`, err);
-    const content = `❌ **Update Failed**\nReason: \`${err.message}\``;
-    if (isInteraction) {
-        await messageOrInteraction.reply({ content, ephemeral: true }).catch(() => {});
-    } else {
-        await messageOrInteraction.reply(content).catch(() => {});
-    }
-  }
-}
-
-// ---------- MODULE REGISTRATION ----------
 export default function registerPaymentModule(client) {
   const cfg = readConfig();
-  const prefix = cfg.payment?.prefix ?? "-";
+  const pay = cfg.payment;
 
   client.once("ready", async () => {
     const cmd = new SlashCommandBuilder()
       .setName("payment")
-      .setDescription("Change product price")
-      .addIntegerOption(o => o.setName("price").setDescription("New price").setRequired(true));
-    
-    await client.application.commands.create(cmd).catch(console.error);
-    console.log("✅ [PAYMENT] System Ready & Slash Command Registered");
+      .setDescription("Change the price of the payment shirt")
+      .addIntegerOption(o => o.setName("price").setDescription("Robux amount").setRequired(true));
+    await client.application.commands.create(cmd).catch(() => {});
   });
+
+  async function runChange(context, priceRaw, isInteraction) {
+    console.log(`[DEBUG] Command triggered by ${isInteraction ? context.user.tag : context.author.tag}`);
+    
+    try {
+      await robloxLogin();
+      
+      const info = await safeGetProductInfo(pay.assetId);
+      if (!info) throw new Error("Could not find asset info.");
+
+      await configurePrice(pay.assetId, priceRaw, info);
+
+      const embed = new EmbedBuilder()
+        .setTitle("✅ Price Updated Successfully")
+        .setColor(0x00FF00)
+        .addFields(
+          { name: "Item", value: info.Name, inline: true },
+          { name: "New Price", value: `${priceRaw} Robux`, inline: true }
+        )
+        .setTimestamp();
+
+      return isInteraction ? context.reply({ embeds: [embed] }) : context.reply({ embeds: [embed] });
+
+    } catch (err) {
+      console.error(`[FINAL ERROR]`, err);
+      const msg = `❌ **Error:** ${err.message.includes("[0]") ? "Roblox rejected the request. Try logging into the bot on a browser once to solve the captcha/challenge, then restart the bot." : err.message}`;
+      
+      if (isInteraction) {
+        if (context.replied) await context.followUp({ content: msg, ephemeral: true });
+        else await context.reply({ content: msg, ephemeral: true });
+      } else {
+        await context.reply(msg);
+      }
+    }
+  }
 
   client.on("interactionCreate", async (i) => {
     if (!i.isChatInputCommand() || i.commandName !== "payment") return;
-    await runPaymentChange(i, i.options.getInteger("price"), true);
+    await runChange(i, i.options.getInteger("price"), true);
   });
 
   client.on("messageCreate", async (m) => {
+    const prefix = pay.prefix || "-";
     if (m.author.bot || !m.content.startsWith(prefix + "payment")) return;
-    const price = m.content.split(" ")[1];
-    await runPaymentChange(m, price, false);
+    const price = parseInt(m.content.split(" ")[1]);
+    if (isNaN(price)) return m.reply("Usage: -payment <number>");
+    await runChange(m, price, false);
   });
 }
