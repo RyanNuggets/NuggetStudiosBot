@@ -5,13 +5,12 @@ import { sendDashboard, handleDashboardInteractions } from "./Features/dashboard
 import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
-import registerPaymentModule from "./Features/payment.js";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // required for -tax / -payment
+    GatewayIntentBits.MessageContent, // required for -tax
     GatewayIntentBits.GuildMembers // required for welcome module
   ],
   partials: [Partials.Channel]
@@ -19,16 +18,15 @@ const client = new Client({
 
 // Toggle these to true only when you want to post the messages once.
 // After they post, set back to false so they don't repost on every restart.
-const POST_DASHBOARD_ON_START = false;
+const POST_DASHBOARD_ON_START = true;
 const POST_ORDERHUB_ON_START = true;
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // ✅ Register feature modules (listeners + slash upserts)
+  // ✅ Register feature modules (listeners + commands)
   registerWelcomeModule(client);
   registerTaxModule(client, { prefix: "-" });
-  registerPaymentModule(client, { prefix: "-" });
 
   if (POST_DASHBOARD_ON_START) {
     try {
@@ -54,11 +52,10 @@ client.on("interactionCreate", async (interaction) => {
     // Each handler ignores interactions it doesn't care about
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
-    // tax + payment slash commands are handled inside their modules
+    // tax commands are handled inside the tax module
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
-    // Don't crash the bot; try to respond if possible
     if (interaction?.isRepliable?.()) {
       const payload = { content: "Something went wrong.", ephemeral: true };
       if (interaction.deferred || interaction.replied) {
