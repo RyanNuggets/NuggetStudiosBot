@@ -26,7 +26,7 @@ const DASHBOARD_LAYOUT = {
           items: [
             {
               media: {
-                url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png"
+                url: "https://media.discordapp.net/attachments/1467051814733222043/1467567485846028403/NS_Dashboard.png?ex=6980da3a&is=697f88ba&hm=0913485abb0a3385f54ff67f374577c6b4dfa517b9051ebc38c94f2a3777669e&=&format=webp&quality=lossless&width=1872&height=560"
               }
             }
           ]
@@ -136,13 +136,13 @@ const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : 
 
 // ---------------- BRAND IMAGE ----------------
 const BRAND_IMAGE =
-  "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png";
+  "https://media.discordapp.net/attachments/1467051814733222043/1467567357323903120/NS_Support.png?ex=6980da1c&is=697f889c&hm=e0367f23faed42e53cb9b297197dc612cebd243bfd8cfb468b25a3786fc1a73d&=&format=webp&quality=lossless&width=1872&height=560";
 
 // ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS) ----------------
 const STUDIO_REGULATIONS_EMBEDS = [
   {
     image: {
-      url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
+      url: "https://media.discordapp.net/attachments/1467051814733222043/1467567344862757030/NS_Regulations.png?ex=6980da19&is=697f8899&hm=04768f1ead12b6e3c6dda5c4a2bbd40de6df174b72471710642978ef62b538ff&=&format=webp&quality=lossless&width=1872&height=560"
     }
   },
   {
@@ -175,7 +175,7 @@ const STUDIO_REGULATIONS_EMBEDS = [
 const ABOUT_US_EMBEDS = [
   {
     image: {
-      url: "https://media.discordapp.net/attachments/1467051814733222043/1467051887936147486/Dashboard_1.png?ex=697efa0a&is=697da88a&hm=7f3d70a98d76fe62886d729de773f0d2d178184711381f185521366f88f93423&=&format=webp&quality=lossless&width=550&height=165"
+      url: "https://media.discordapp.net/attachments/1467051814733222043/1467567417289871543/NS_About_Us.png?ex=6980da2a&is=697f88aa&hm=56345b328f6d6fe86997defe77f9c3c496f50289e65c153c9a11300b7599b376&=&format=webp&quality=lossless&width=1872&height=560"
     }
   },
   {
