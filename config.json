@@ -1,32 +1,32 @@
 {
-  "guildId": "1466859022161416368",
+  "guildId": "1015000518889853028",
 
   "dashboard": {
-    "dashboardChannelId": "1467054193817944168",
+    "dashboardChannelId": "1467408820606337148",
 
-    "ticketCategoryId": "1467054322297737309",
-    "supportRoleId": "1467054430212984832",
-    "managementRoleId": "1467069522014896258",
+    "ticketCategoryId": "1467409607268761727",
+    "supportRoleId": "1467409080921358417",
+    "managementRoleId": "1467409061459923004",
 
     "ticketChannelNameFormat": "ticket-{username}",
-    "ticketLogsChannelId": "1467066668814696531"
+    "ticketLogsChannelId": "1467409025581842434"
   },
 
 "orderhub": {
-  "orderHubChannelId": "1467239168227676426",
-  "staffRoleId": "1467239276994625607",
+  "orderHubChannelId": "1467408873563357205",
+  "staffRoleId": "1467409061459923004",
 
-  "categoryFiatId": "1467239466728161628",
-  "categoryRobuxId": "1467239518032760935",
+  "categoryFiatId": "1467409745727193270",
+  "categoryRobuxId": "1467409766979731538",
 
   "orderChannelNameFormat": "order-{username}",
-  "orderLogsChannelId": "1467239248724754472",
+  "orderLogsChannelId": "1467409037548322927",
 
-  "reviewChannelId": "1467248480249450580"
+  "reviewChannelId": "1467409006787166238"
 },
 
   "welcome": {
     "enabled": true,
-    "channelId": "1466860445653795007"
+    "channelId": "1467409530303549655"
   }
 }
