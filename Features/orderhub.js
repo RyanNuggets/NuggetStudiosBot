@@ -492,7 +492,7 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
       {
         description:
           `## New Order Review\n` +
-          `> - Review left by <@${userId}>.`
+          `> - Review left by <@${userId}>.`,
         fields: [
           { name: "Designer:", value: `<@${designerId}>`, inline: true },
           { name: "Rating:", value: stars || "—", inline: true },
