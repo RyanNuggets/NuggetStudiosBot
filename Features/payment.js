@@ -62,17 +62,25 @@ function clampInt(n, min, max) {
   return i;
 }
 
-async function safeGetProductInfo(assetId) {
-  try {
-    return await noblox.getProductInfo(Number(assetId));
-  } catch (e) {
-    // Specifically check for rate limits
-    if (e?.message?.includes("429") || e?.content?.includes("429")) {
-        console.error("[PAYMENT] Rate limited by Roblox (429).");
-        return "RATE_LIMITED";
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Enhanced Fetcher with Retry Logic for 429s
+async function safeGetProductInfo(assetId, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await noblox.getProductInfo(Number(assetId));
+    } catch (e) {
+      const isRateLimit = e?.message?.includes("429") || JSON.stringify(e).includes("Too many requests");
+      
+      if (isRateLimit && i < retries - 1) {
+        console.warn(`[PAYMENT] Rate limited. Retrying in ${2 * (i + 1)}s...`);
+        await sleep(2000 * (i + 1)); // Wait longer each time
+        continue;
+      }
+      
+      console.error("[PAYMENT] getProductInfo failed:", e?.message || e);
+      return null;
     }
-    console.error("[PAYMENT] getProductInfo failed:", e?.message || e);
-    return null;
   }
 }
 
@@ -108,24 +116,28 @@ async function fetchRecentAudit(groupId, limit = 10) {
 
 function formatAuditEntry(entry) {
   const actorId = entry?.actor?.userId ?? entry?.actor?.id ?? entry?.actorUserId ?? null;
-  const actorName = entry?.actor?.user?.username ?? entry?.actor?.username ?? entry?.actor?.name ?? entry?.actorName ?? "Unknown";
+  const actorName = entry?.actor?.user?.username ?? entry?.actor?.username ?? entry?.actor?.name ?? "Unknown";
   const created = entry?.created ?? entry?.createdAt ?? entry?.createdTime ?? entry?.time ?? Date.now();
   const actorProfile = actorId ? `[${actorName}](https://www.roblox.com/users/${actorId}/profile)` : actorName;
-  const desc = entry?.description ?? entry?.actionDescription ?? entry?.details ?? entry?.metadata?.description ?? "Configured an item";
+  const desc = entry?.description ?? entry?.actionDescription ?? entry?.details ?? "Configured an item";
 
   return { actorProfile, desc, created };
 }
 
 // ---------- CONFIGURE PRICE ----------
 async function configureShirtPrice(assetId, newPrice, cachedInfo) {
-  // Use the info we already fetched to save an API call
-  const info = cachedInfo;
+  // Use cachedInfo if provided to save an API call
+  const info = cachedInfo || (await safeGetProductInfo(assetId));
   
+  if (!info) {
+    throw new Error("Roblox API is not responding (429 Rate Limit). Please wait a few minutes.");
+  }
+
   const name = info?.Name ?? info?.name;
   const description = info?.Description ?? info?.description ?? "";
 
   if (!name) {
-    throw new Error('Required argument "name" is missing from product info.');
+    throw new Error("Product info returned no name. Cannot update.");
   }
 
   await noblox.configureItem(
@@ -162,14 +174,18 @@ function buildPaymentEmbed({ assetName, newPrice, onSale, updatedAt, recentActiv
     });
   }
 
-  return new EmbedBuilder().setDescription(lines.join("\n"));
+  return new EmbedBuilder().setDescription(lines.join("\n")).setColor("Blue");
 }
 
 // ---------- RUN CHANGE ----------
 async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = false) {
   const cfg = readConfig();
   const pay = cfg.payment;
-  const { assetId, groupId, allowedRoleId, logChannelId } = pay;
+
+  const assetId = pay?.assetId;
+  const groupId = pay?.groupId;
+  const allowedRoleId = pay?.allowedRoleId;
+  const logChannelId = pay?.logChannelId;
 
   if (!assetId || !groupId) {
     throw new Error("config.json payment.assetId and payment.groupId are required.");
@@ -188,30 +204,27 @@ async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = 
     return isInteraction ? messageOrInteraction.reply({ content, ephemeral: true }) : messageOrInteraction.reply({ content });
   }
 
-  await robloxLogin();
+  // Defer if it's an interaction because Roblox API can take a few seconds
+  if (isInteraction) await messageOrInteraction.deferReply();
 
   try {
+    await robloxLogin();
+
     // 1. Fetch info ONCE
-    const info = await safeGetProductInfo(assetId);
-
-    if (info === "RATE_LIMITED") {
-        throw new Error("Roblox is rate-limiting the bot (Too Many Requests). Please try again in 5-10 minutes.");
-    }
-    if (!info) {
-        throw new Error("Could not fetch product info. Check if the Asset ID is correct and public.");
+    const infoBefore = await safeGetProductInfo(assetId);
+    if (!infoBefore) {
+        throw new Error("Could not fetch product info. Roblox is rate-limiting the bot.");
     }
 
-    const previousPrice = info?.PriceInRobux ?? info?.price ?? "Unknown";
+    // 2. Update using that info
+    await configureShirtPrice(assetId, newPrice, infoBefore);
 
-    // 2. Perform the update using the info we just fetched
-    await configureShirtPrice(assetId, newPrice, info);
-
-    const onSale = info?.IsForSale ?? info?.isForSale ?? true;
-    const activityRaw = await fetchRecentAudit(groupId, 5);
+    const onSale = infoBefore?.IsForSale ?? infoBefore?.isForSale ?? true;
+    const activityRaw = await fetchRecentAudit(groupId, 10);
     const recentActivity = activityRaw.map(formatAuditEntry);
 
     const embed = buildPaymentEmbed({
-      assetName: info?.Name ?? info?.name ?? "Payment Item",
+      assetName: infoBefore?.Name ?? infoBefore?.name ?? "Payment Item",
       newPrice,
       onSale,
       updatedAt: Date.now(),
@@ -219,7 +232,7 @@ async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = 
     });
 
     if (isInteraction) {
-      await messageOrInteraction.reply({ embeds: [embed] });
+      await messageOrInteraction.editReply({ embeds: [embed] });
     } else {
       await messageOrInteraction.reply({ embeds: [embed] });
     }
@@ -231,30 +244,23 @@ async function runPaymentChange(messageOrInteraction, priceRaw, isInteraction = 
         const actorTag = isInteraction ? messageOrInteraction.user?.tag : messageOrInteraction.author?.tag;
         const logEmbed = new EmbedBuilder()
           .setTitle("Payment Price Updated")
-          .setDescription([
-              `**Asset:** ${info?.Name ?? info?.name} (\`${assetId}\`)`,
-              `**New Price:** ${newPrice}`,
-              `**Previous Price:** ${previousPrice}`,
-              `**Changed By:** ${actorTag}`
-            ].join("\n"))
+          .setDescription(`**Asset:** ${infoBefore.Name} (\`${assetId}\`)\n**New Price:** ${newPrice}\n**Changed By:** ${actorTag}`)
           .setTimestamp();
         await logCh.send({ embeds: [logEmbed] }).catch(() => {});
       }
     }
   } catch (err) {
     logNobloxError("❌ [PAYMENT] update failed:", err);
-    const reason = err?.message || "Internal Roblox Error";
-    const content = `❌ Failed to update shirt price.\nReason: \`${reason}\``;
+    const content = `❌ Failed to update price.\nReason: \`${err.message}\``;
     
     if (isInteraction) {
-      await messageOrInteraction.reply({ content, ephemeral: true }).catch(() => {});
+      await messageOrInteraction.editReply({ content }).catch(() => {});
     } else {
       await messageOrInteraction.reply({ content }).catch(() => {});
     }
   }
 }
 
-// ---------- REGISTER MODULE ----------
 export default function registerPaymentModule(client) {
   const cfg = readConfig();
   const pay = cfg.payment;
@@ -267,25 +273,21 @@ export default function registerPaymentModule(client) {
         .setDescription("Change the Roblox payment shirt price.")
         .addIntegerOption((opt) => opt.setName("price").setDescription("New price").setRequired(true));
       await client.application.commands.create(cmd);
-      console.log("✅ [PAYMENT] /payment registered");
     } catch (e) {
-      console.error("❌ [PAYMENT] Failed to register /payment:", e?.message || e);
+      console.error("❌ [PAYMENT] Failed to register command:", e.message);
     }
   });
 
-  client.on("interactionCreate", async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== "payment") return;
-    await runPaymentChange(interaction, interaction.options.getInteger("price"), true);
+  client.on("interactionCreate", async (i) => {
+    if (i.isChatInputCommand() && i.commandName === "payment") await runPaymentChange(i, i.options.getInteger("price"), true);
   });
 
-  client.on("messageCreate", async (message) => {
-    if (!message.guild || message.author.bot) return;
-    const content = message.content.trim();
-    const cmd = `${prefix}payment`;
-    if (!content.toLowerCase().startsWith(cmd)) return;
-    const parts = content.split(/\s+/);
-    if (parts[1] == null) return message.reply(`❌ Usage: \`${cmd} <price>\``);
-    await runPaymentChange(message, parts[1], false);
+  client.on("messageCreate", async (m) => {
+    if (!m.guild || m.author.bot) return;
+    if (m.content.startsWith(`${prefix}payment`)) {
+      const price = m.content.split(/\s+/)[1];
+      await runPaymentChange(m, price, false);
+    }
   });
 
   console.log("✅ Payment module registered");
