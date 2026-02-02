@@ -3,38 +3,33 @@
 
   "dashboard": {
     "dashboardChannelId": "1467408820606337148",
-
     "ticketCategoryId": "1467409607268761727",
     "supportRoleId": "1467409080921358417",
     "managementRoleId": "1467409061459923004",
-
     "ticketChannelNameFormat": "ticket-{username}",
     "ticketLogsChannelId": "1467409025581842434"
   },
 
-"orderhub": {
-  "orderHubChannelId": "1467408873563357205",
-  "staffRoleId": "1467409061459923004",
+  "orderhub": {
+    "orderHubChannelId": "1467408873563357205",
+    "staffRoleId": "1467409061459923004",
+    "categoryFiatId": "1467409745727193270",
+    "categoryRobuxId": "1467409766979731538",
+    "orderChannelNameFormat": "order-{username}",
+    "orderLogsChannelId": "1467409037548322927",
+    "reviewChannelId": "1467409006787166238"
+  },
 
-  "categoryFiatId": "1467409745727193270",
-  "categoryRobuxId": "1467409766979731538",
-
-  "orderChannelNameFormat": "order-{username}",
-  "orderLogsChannelId": "1467409037548322927",
-
-  "reviewChannelId": "1467409006787166238"
-},
-  
- "packages": {
+  "packages": {
     "staffRoleId": "1467409087515070464",
     "storageChannelId": "1467859186904731785",
-
     "forumChannels": {
       "uniforms": "1467859457726877850",
       "graphics": "1467855193415745619",
       "livery": "1467859474588110962"
-},
-   
+    }
+  },
+
   "welcome": {
     "enabled": true,
     "channelId": "1467409530303549655"
