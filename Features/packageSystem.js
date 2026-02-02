@@ -738,27 +738,36 @@ export function registerPackageSystem(client, config) {
         db.prepare("UPDATE purchases SET claimed_at=?, claimed_send_id=? WHERE id=?")
           .run(Date.now(), sendRow.id, purchase.id);
 
-        const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+try {
+  const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
 
-        const dm = await interaction.user.createDM();
-        const dmPayload = buildDmThanksComponents({
-          robloxUser,
-          price: pkg.price,
-          productName: pkg.name,
-          sendId: sendRow.id
-        });
+  const dm = await interaction.user.createDM();
+  const dmPayload = buildDmThanksComponents({
+    robloxUser,
+    price: pkg.price,
+    productName: pkg.name,
+    sendId: sendRow.id
+  });
 
-        const msg = await dm.send(dmPayload);
+  const msg = await dm.send(dmPayload);
 
-        db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
-          .run(msg.id, dm.channel.id, sendRow.id);
+  db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
+    .run(msg.id, dm.channel.id, sendRow.id);
 
-      await interaction.editReply(
-      "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
-    );
-      return;
+  await interaction.editReply(
+    "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
+  );
+  return;
+} catch (e) {
+  console.error("CLAIM DM SEND ERROR:", e);
+
+  await interaction.editReply(
+    "⚠️ I couldn't DM you. Please enable **Direct Messages** from server members (Privacy Settings) and try again."
+  );
+  return;
 }
-        
+}
+      
       // ---------- DOWNLOAD (DM button) ----------
       if (interaction.isButton() && interaction.customId.startsWith(`${IDS.download}:`)) {
         const sendId = Number(interaction.customId.split(":")[1]);
@@ -848,14 +857,20 @@ export function registerPackageSystem(client, config) {
         return;
       }
     } catch (err) {
-      console.error("interactionCreate error:", err);
-      if (interaction?.isRepliable?.()) {
-        try {
-          await safeReply(interaction, { content: "Something went wrong. Check logs." }, { ephemeral: true });
-        } catch {}
-      }
+  console.error("interactionCreate error:", err);
+
+  if (!interaction?.isRepliable?.()) return;
+
+  try {
+    const msg = "Something went wrong. Check logs.";
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: msg });
+    } else {
+      await safeReply(interaction, { content: msg }, { ephemeral: true });
     }
-  });
+  } catch {}
+}
+});
 
   // -------------------- DM attachment capture --------------------
   client.on("messageCreate", async (msg) => {
