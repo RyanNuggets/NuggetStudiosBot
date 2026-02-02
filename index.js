@@ -1,5 +1,5 @@
 // index.js
-import { Client, GatewayIntentBits, Partials, REST, Routes } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import fs from "fs";
 
 import { sendDashboard, handleDashboardInteractions } from "./Features/dashboard.js";
@@ -7,10 +7,10 @@ import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
 
-// ✅ merged in from testing index.js (package system)
-import registerPackageSystem, { packageCommands } from "./Features/packageSystem.js";
+// ✅ package system (NO named import)
+import registerPackageSystem from "./Features/packageSystem.js";
 
-// ---------------- CONFIG (package system uses this) ----------------
+// ---------------- CONFIG (package system may use this internally) ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const config = readConfig();
 
@@ -31,36 +31,6 @@ const client = new Client({
 const POST_DASHBOARD_ON_START = true;
 const POST_ORDERHUB_ON_START = true;
 
-// ---------------- PACKAGE COMMAND REGISTRATION ----------------
-async function registerCommands() {
-  const token =
-    process.env.DISCORD_TOKEN ||
-    process.env.TOKEN ||
-    config.token;
-
-  const clientId =
-    process.env.CLIENT_ID ||
-    config.clientId;
-
-  // ✅ guildId is inside config.packages.guildId in your config.json
-  const guildId =
-    process.env.GUILD_ID ||
-    config.packages?.guildId;
-
-  if (!token) throw new Error("Missing DISCORD_TOKEN/TOKEN (env) or token (config.json)");
-  if (!clientId) throw new Error("Missing CLIENT_ID (env) or clientId (config.json)");
-  if (!guildId) throw new Error("Missing GUILD_ID (env) or packages.guildId (config.json)");
-
-  const rest = new REST({ version: "10" }).setToken(token);
-
-  await rest.put(
-    Routes.applicationGuildCommands(clientId, guildId),
-    { body: packageCommands }
-  );
-
-  console.log("✅ Slash commands registered to guild:", guildId);
-}
-
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -68,10 +38,7 @@ client.once("ready", async () => {
   registerWelcomeModule(client);
   registerTaxModule(client, { prefix: "-" });
 
-  // ✅ merged: register package slash commands + listeners
-  await registerCommands().catch((e) => {
-    console.error("❌ Command registration failed:", e);
-  });
+  // ✅ Package system listeners
   registerPackageSystem(client);
 
   if (POST_DASHBOARD_ON_START) {
@@ -99,7 +66,7 @@ client.on("interactionCreate", async (interaction) => {
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
     // tax commands are handled inside the tax module
-    // package system handles its own listeners inside Features/packageSystem.js
+    // package system handles its own interactions inside Features/packageSystem.js
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
