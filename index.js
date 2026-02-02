@@ -33,7 +33,7 @@ const POST_DASHBOARD_ON_START = true;
 const POST_ORDERHUB_ON_START = true;
 
 // ---------------- READY ----------------
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   // ✅ Register feature modules (listeners + commands)
@@ -41,11 +41,24 @@ client.once("clientReady", async () => {
   registerTaxModule(client, { prefix: "-" });
 
   // ✅ Register package system (includes slash command registration internally)
-  try {
-    registerPackageSystem(client, config);
-    console.log("✅ Package system enabled");
-  } catch (err) {
-    console.error("❌ Package system failed to start:", err);
+  // We retry a few times so it 100% shows up even if Discord is slow on boot.
+  const MAX_RETRIES = 5;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔄 Starting package system (attempt ${attempt}/${MAX_RETRIES})...`);
+      registerPackageSystem(client, config);
+      console.log("✅ Package system enabled (and commands registering inside it).");
+      break;
+    } catch (err) {
+      console.error(`❌ Package system failed to start (attempt ${attempt}):`, err);
+      if (attempt === MAX_RETRIES) {
+        console.error("❌ Package system could not be started after retries.");
+      } else {
+        // small delay before retry
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+    }
   }
 
   if (POST_DASHBOARD_ON_START) {
@@ -103,9 +116,16 @@ if (!process.env.TOKEN) {
   process.exit(1);
 }
 
-// Package system also needs CLIENT_ID + DISCORD_TOKEN (it currently reads DISCORD_TOKEN)
-// ✅ easiest fix: set BOTH env vars to the same token in Railway:
-// - TOKEN = your bot token (used here)
-// - DISCORD_TOKEN = your bot token (used in packageSystem.js)
-// - CLIENT_ID = your application client id
+// ✅ IMPORTANT: packageSystem.js currently reads DISCORD_TOKEN + CLIENT_ID.
+// To guarantee commands register:
+// - TOKEN = bot token (used here)
+// - DISCORD_TOKEN = SAME bot token (used in packageSystem.js)
+// - CLIENT_ID = your application id
+if (!process.env.DISCORD_TOKEN) {
+  console.warn("⚠️ Missing DISCORD_TOKEN env var. Set it equal to TOKEN so package commands register.");
+}
+if (!process.env.CLIENT_ID) {
+  console.warn("⚠️ Missing CLIENT_ID env var. Slash commands will NOT register without it.");
+}
+
 client.login(process.env.TOKEN);
