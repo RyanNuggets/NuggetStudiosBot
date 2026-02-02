@@ -758,16 +758,21 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
     return;
   }
 
-  try {
-    const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+try {
+  let robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
 
-    const dm = await interaction.user.createDM();
-    const dmPayload = buildDmThanksComponents({
-      robloxUser,
-      price: pkg.price,
-      productName: pkg.name,
-      sendId: sendRow.id
-    });
+  // fallback to stored purchase username
+  if (!robloxUser && purchase.roblox_username) {
+    robloxUser = purchase.roblox_username;
+  }
+
+  const dm = await interaction.user.createDM();
+  const dmPayload = buildDmThanksComponents({
+    robloxUser,
+    price: pkg.price,
+    productName: pkg.name,
+    sendId: sendRow.id
+  });
 
     const msg = await dm.send(dmPayload);
 
