@@ -758,12 +758,6 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
     return;
   }
 
-  // ✅ If already claimed, don't block them with "no verified purchase"
-  if (purchase.claimed_at) {
-    await interaction.editReply("✅ You already claimed this purchase. Check your DMs.");
-    return;
-  }
-
   try {
     const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
 
