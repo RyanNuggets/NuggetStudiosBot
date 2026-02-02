@@ -8,7 +8,7 @@ import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
 
-// ✅ Package system (registration handled inside packageSystem.js)
+// ✅ Package system
 import { registerPackageSystem } from "./Features/packageSystem.js";
 
 // ---------------- CONFIG ----------------
@@ -20,46 +20,35 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // required for -tax and some flows
-    GatewayIntentBits.GuildMembers,   // welcome + role checks
-    GatewayIntentBits.DirectMessages  // ✅ package system DM wizard
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages
   ],
-  partials: [Partials.Channel] // ✅ required for DMs
+  partials: [Partials.Channel]
 });
 
 // Toggle these to true only when you want to post the messages once.
-// After they post, set back to false so they don't repost on every restart.
 const POST_DASHBOARD_ON_START = true;
 const POST_ORDERHUB_ON_START = true;
+
+// ✅ IMPORTANT: register package system BEFORE ready
+try {
+  registerPackageSystem(client, config);
+  console.log("✅ Package system loaded (waiting for ready to register commands)");
+} catch (err) {
+  console.error("❌ Package system failed to load:", err);
+}
 
 // ---------------- READY ----------------
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // ✅ Register feature modules (listeners + commands)
+  // Existing modules
   registerWelcomeModule(client);
+  console.log("✅ Welcome module registered");
+
   registerTaxModule(client, { prefix: "-" });
-
-  // ✅ Register package system (includes slash command registration internally)
-  // We retry a few times so it 100% shows up even if Discord is slow on boot.
-  const MAX_RETRIES = 5;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`🔄 Starting package system (attempt ${attempt}/${MAX_RETRIES})...`);
-      registerPackageSystem(client, config);
-      console.log("✅ Package system enabled (and commands registering inside it).");
-      break;
-    } catch (err) {
-      console.error(`❌ Package system failed to start (attempt ${attempt}):`, err);
-      if (attempt === MAX_RETRIES) {
-        console.error("❌ Package system could not be started after retries.");
-      } else {
-        // small delay before retry
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-    }
-  }
+  console.log("✅ Tax module registered");
 
   if (POST_DASHBOARD_ON_START) {
     try {
@@ -83,11 +72,10 @@ client.once("ready", async () => {
 // ---------------- INTERACTIONS ----------------
 client.on("interactionCreate", async (interaction) => {
   try {
-    // Each handler ignores interactions it doesn't care about
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
-    // tax commands handled in tax module
-    // package system handles its own interactions internally
+    // tax handled in tax module
+    // packageSystem handles its own interactions internally
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
@@ -102,7 +90,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---------- Process guards (Railway-safe) ----------
+// ---------- Process guards ----------
 process.on("unhandledRejection", (reason) => {
   console.error("❌ Unhandled Rejection:", reason);
 });
@@ -116,16 +104,8 @@ if (!process.env.TOKEN) {
   process.exit(1);
 }
 
-// ✅ IMPORTANT: packageSystem.js currently reads DISCORD_TOKEN + CLIENT_ID.
-// To guarantee commands register:
-// - TOKEN = bot token (used here)
-// - DISCORD_TOKEN = SAME bot token (used in packageSystem.js)
-// - CLIENT_ID = your application id
-if (!process.env.DISCORD_TOKEN) {
-  console.warn("⚠️ Missing DISCORD_TOKEN env var. Set it equal to TOKEN so package commands register.");
-}
-if (!process.env.CLIENT_ID) {
-  console.warn("⚠️ Missing CLIENT_ID env var. Slash commands will NOT register without it.");
-}
+// Package system needs these:
+if (!process.env.CLIENT_ID) console.warn("⚠️ Missing CLIENT_ID env var (slash commands will not register).");
+if (!process.env.DISCORD_TOKEN) console.warn("⚠️ Missing DISCORD_TOKEN env var (set it same as TOKEN).");
 
 client.login(process.env.TOKEN);
