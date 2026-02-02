@@ -1,10 +1,11 @@
-// packageSystem.js (FULL FIXED SCRIPT FOR YOUR CONFIG)
-// ✅ Works with your existing config.packages.forumChannels
-// ✅ Adds purchase verification (requires adding packages.groupId + ROBLOX_COOKIE)
-// ✅ Fixes DM download interaction failed (no ephemeral in DMs + defer/editReply)
-// ✅ Fixes claim timeout (deferReply)
-// ✅ Keeps your send wizard + forum posting logic
+// packageSystem.js (FULL SCRIPT + DEBUG LOGS + FIXES)
+// ✅ Fixes DM "interaction failed" on download (no ephemeral in DMs + defer/editReply)
+// ✅ Fixes claim timeouts (deferReply)
+// ✅ Adds purchase verification via Roblox GROUP sales watcher (requires packages.groupId + ROBLOX_COOKIE)
+// ✅ Adds 7-day lookback on first run so it can catch recent purchases
+// ✅ Adds detailed logs so you can SEE why it says "no verified purchase"
 
+// -------------------- IMPORTS --------------------
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,6 +29,7 @@ import {
 
 // -------------------- DB (Railway Volume) --------------------
 const DB_PATH = process.env.DB_PATH || "/data/packages.db";
+const LOOKBACK_DAYS_ON_FIRST_RUN = 7;
 
 function openDb() {
   const dir = path.dirname(DB_PATH);
@@ -71,20 +73,21 @@ function openDb() {
       filename TEXT NOT NULL
     );
 
-    -- ✅ Purchases for claim validation
+    -- Purchase verification storage (Roblox group sale watcher writes here)
     CREATE TABLE IF NOT EXISTS purchases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       discord_user_id TEXT NOT NULL,
       roblox_user_id TEXT,
       roblox_username TEXT,
       asset_id TEXT NOT NULL,
+      item_name TEXT,
       amount INTEGER,
       purchased_at INTEGER NOT NULL,
       claimed_at INTEGER,
       claimed_send_id INTEGER
     );
 
-    -- ✅ Meta table for watcher
+    -- Meta table for watcher timestamp
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -98,11 +101,12 @@ function metaGet(db, key) {
   return db.prepare("SELECT value FROM meta WHERE key=?").get(key)?.value ?? null;
 }
 function metaSet(db, key, value) {
-  db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-    .run(key, String(value));
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+  ).run(key, String(value));
 }
 
-// -------------------- Helpers: Ephemeral only in guilds --------------------
+// -------------------- Helpers: ephemeral only in guilds --------------------
 function isGuildInteraction(interaction) {
   return typeof interaction.inGuild === "function" ? interaction.inGuild() : !!interaction.guildId;
 }
@@ -147,7 +151,7 @@ async function getRobloxUsernameViaBloxlink(discordUserId) {
   return udata?.name || null;
 }
 
-// Roblox -> Discord (guild-scoped) for purchase watcher
+// Roblox -> Discord (guild scoped) used by watcher
 async function getDiscordIdFromBloxlink(robloxId, discordGuildId) {
   const apiKey = process.env.BLOXLINK_API_KEY;
   if (!apiKey) return null;
@@ -157,8 +161,8 @@ async function getDiscordIdFromBloxlink(robloxId, discordGuildId) {
     `https://api.blox.link/v4/public/guilds/${discordGuildId}/roblox-to-discord/${robloxId}`,
     { headers: { Authorization: apiKey } }
   );
-
   if (!res.ok) return null;
+
   const data = await res.json().catch(() => null);
   return data?.discordIDs?.[0] ?? null;
 }
@@ -174,34 +178,29 @@ async function registerCommands({ token, clientId, guildId }) {
     .addSubcommand((s) => s.setName("send").setDescription("Send yourself a package (DM wizard)"))
     .addSubcommand((s) => s.setName("delete").setDescription("Delete a package (and its forum threads)"));
 
-  await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
-    body: [cmd.toJSON()]
-  });
+  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [cmd.toJSON()] });
 }
 
 // -------------------- UI IDs --------------------
 const IDS = {
-  // create flow
   create_edit: "pkg_create_edit",
   create_submit: "pkg_create_submit",
   create_modal: "pkg_create_modal",
 
-  // send flow
   send_pick_pkg: "pkg_send_pick_pkg",
   send_pick_forum: "pkg_send_pick_forum",
   send_done_images: "pkg_send_done_images",
   send_done_file: "pkg_send_done_file",
 
-  // thread embed claim + dm download
   claim: "pkg_claim",
   download: "pkg_download",
 
-  // delete flow
   delete_pick: "pkg_delete_pick",
   delete_confirm: "pkg_delete_confirm",
   delete_cancel: "pkg_delete_cancel"
 };
 
+// -------------------- Embeds/UI builders --------------------
 function packagePreviewEmbed(draft) {
   return new EmbedBuilder()
     .setTitle("Package Preview")
@@ -283,11 +282,10 @@ function buildDmThanksComponents({ robloxUser, price, productName, sendId }) {
   return { embeds: [embed], components: [row] };
 }
 
-// -------------------- Purchase watcher (Roblox GROUP sales) --------------------
-// ✅ You must add config.packages.groupId for this to work.
-// Without groupId, CLAIM will block because no purchases can be verified.
+// -------------------- Roblox GROUP purchase watcher --------------------
 async function startPurchaseWatcher({ db, discordGuildId, groupId, pollMs = 20000 }) {
-  const cookie = process.env.ROBLOX_COOKIE; // .ROBLOSECURITY
+  const cookie = process.env.ROBLOX_COOKIE;
+
   if (!cookie) {
     console.log("⚠️ Purchase watcher disabled: Missing env ROBLOX_COOKIE");
     return;
@@ -307,14 +305,26 @@ async function startPurchaseWatcher({ db, discordGuildId, groupId, pollMs = 2000
 
   const metaKey = "purchases:last_ts";
   const existing = metaGet(db, metaKey);
-  if (!existing) metaSet(db, metaKey, Date.now()); // start now so we don't import history
+
+  // ✅ Lookback on first run so recent purchases can be verified
+  if (!existing) {
+    const backMs = LOOKBACK_DAYS_ON_FIRST_RUN * 24 * 60 * 60 * 1000;
+    metaSet(db, metaKey, Date.now() - backMs);
+    console.log(`🕒 First run: purchase watcher lookback set to last ${LOOKBACK_DAYS_ON_FIRST_RUN} days.`);
+  }
 
   setInterval(async () => {
     try {
       const lastTs = Number(metaGet(db, metaKey) || Date.now());
       const txns = await noblox.getGroupTransactions(Number(groupId), "Sale");
-      const sorted = [...txns].sort((a, b) => new Date(a.created) - new Date(b.created));
 
+      if (!Array.isArray(txns)) {
+        console.log("⚠️ getGroupTransactions returned non-array.");
+        return;
+      }
+
+      // Process oldest -> newest for stable last_ts update
+      const sorted = [...txns].sort((a, b) => new Date(a.created) - new Date(b.created));
       let newestSeen = lastTs;
 
       for (const t of sorted) {
@@ -324,20 +334,31 @@ async function startPurchaseWatcher({ db, discordGuildId, groupId, pollMs = 2000
 
         const robloxBuyerId = t.agent?.id ?? null;
         const robloxBuyerName = t.agent?.name ?? null;
-        const itemId = t.details?.id ?? null; // asset id
+        const itemId = t.details?.id ?? null;           // IMPORTANT: this is what we store as asset_id
+        const itemName = t.details?.name ?? null;
         const amount = t.currency?.amount ?? null;
 
-        if (!robloxBuyerId || !itemId) {
-          newestSeen = Math.max(newestSeen, createdMs);
-          continue;
-        }
+        console.log("SALE SEEN:", {
+          created: t.created,
+          itemId,
+          itemName,
+          buyerId: robloxBuyerId,
+          buyerName: robloxBuyerName,
+          amount
+        });
+
+        newestSeen = Math.max(newestSeen, createdMs);
+
+        if (!robloxBuyerId || !itemId) continue;
 
         const discordId = await getDiscordIdFromBloxlink(String(robloxBuyerId), discordGuildId);
         if (!discordId) {
-          newestSeen = Math.max(newestSeen, createdMs);
+          console.log("BLOXLINK FAILED:", { robloxBuyerId, robloxBuyerName, discordGuildId });
           continue;
         }
+        console.log("BLOXLINK OK:", { robloxBuyerId, discordId });
 
+        // Prevent duplicates (discord + itemId + createdMs)
         const existsRow = db.prepare(`
           SELECT 1 FROM purchases
           WHERE discord_user_id=? AND asset_id=? AND purchased_at=?
@@ -346,22 +367,25 @@ async function startPurchaseWatcher({ db, discordGuildId, groupId, pollMs = 2000
 
         if (!existsRow) {
           db.prepare(`
-            INSERT INTO purchases (discord_user_id, roblox_user_id, roblox_username, asset_id, amount, purchased_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO purchases (discord_user_id, roblox_user_id, roblox_username, asset_id, item_name, amount, purchased_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `).run(
             String(discordId),
             String(robloxBuyerId),
             robloxBuyerName ? String(robloxBuyerName) : null,
             String(itemId),
+            itemName ? String(itemName) : null,
             amount !== null ? Number(amount) : null,
             createdMs
           );
-        }
 
-        newestSeen = Math.max(newestSeen, createdMs);
+          console.log("✅ PURCHASE STORED:", { discordId, asset_id: String(itemId), purchased_at: createdMs });
+        }
       }
 
-      if (newestSeen > lastTs) metaSet(db, metaKey, newestSeen);
+      if (newestSeen > lastTs) {
+        metaSet(db, metaKey, newestSeen);
+      }
     } catch (e) {
       console.error("purchase watcher error:", e);
     }
@@ -377,6 +401,7 @@ export function registerPackageSystem(client, config) {
   if (!cfg) throw new Error("Missing `packages` in config.json");
 
   const db = openDb();
+  const drafts = new Map(); // userId -> draft
 
   client.once("ready", async () => {
     try {
@@ -389,19 +414,17 @@ export function registerPackageSystem(client, config) {
       await registerCommands({ token, clientId, guildId });
       console.log("✅ Slash commands registered.");
 
-      // ✅ Start purchase watcher if groupId is provided
+      // Start watcher (requires cfg.groupId)
       await startPurchaseWatcher({
         db,
         discordGuildId: guildId,
-        groupId: cfg.groupId,     // <-- add this to config.json
+        groupId: cfg.groupId,
         pollMs: cfg.pollMs || 20000
       });
     } catch (e) {
       console.error("❌ Startup failed:", e);
     }
   });
-
-  const drafts = new Map(); // userId -> draft
 
   // ---------------- interactions ----------------
   client.on("interactionCreate", async (interaction) => {
@@ -428,11 +451,7 @@ export function registerPackageSystem(client, config) {
             new ButtonBuilder().setCustomId(IDS.create_submit).setLabel("Submit").setStyle(ButtonStyle.Primary)
           );
 
-          await safeReply(
-            interaction,
-            { embeds: [packagePreviewEmbed(draft)], components: [row] },
-            { ephemeral: true }
-          );
+          await safeReply(interaction, { embeds: [packagePreviewEmbed(draft)], components: [row] }, { ephemeral: true });
           return;
         }
 
@@ -442,7 +461,6 @@ export function registerPackageSystem(client, config) {
 
           const dm = await interaction.user.createDM();
           const all = db.prepare("SELECT id, name FROM packages ORDER BY created_at DESC").all();
-
           if (!all.length) {
             await dm.send("No packages exist yet. Use `/package create` first.");
             return;
@@ -453,10 +471,7 @@ export function registerPackageSystem(client, config) {
             .setPlaceholder("Select a package")
             .addOptions(all.slice(0, 25).map((p) => ({ label: p.name, value: String(p.id) })));
 
-          await dm.send({
-            content: "Select which package to send:",
-            components: [new ActionRowBuilder().addComponents(pkgSelect)]
-          });
+          await dm.send({ content: "Select which package to send:", components: [new ActionRowBuilder().addComponents(pkgSelect)] });
           return;
         }
 
@@ -496,40 +511,11 @@ export function registerPackageSystem(client, config) {
 
         const modal = new ModalBuilder().setCustomId(IDS.create_modal).setTitle("Package Details");
 
-        const name = new TextInputBuilder()
-          .setCustomId("name")
-          .setLabel("Package Name")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setValue(draft.name || "");
-
-        const link = new TextInputBuilder()
-          .setCustomId("purchase_link")
-          .setLabel("Roblox Purchase Link")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setValue(draft.purchase_link || "");
-
-        const packer = new TextInputBuilder()
-          .setCustomId("packer_id")
-          .setLabel("Packer Discord User ID (paste ID)")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setValue(draft.packer_id || "");
-
-        const price = new TextInputBuilder()
-          .setCustomId("price")
-          .setLabel("Price (Robux)")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setValue(draft.price ? String(draft.price) : "");
-
-        const items = new TextInputBuilder()
-          .setCustomId("items")
-          .setLabel("Included Items (one per line)")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-          .setValue(draft.included_items?.join("\n") || "");
+        const name = new TextInputBuilder().setCustomId("name").setLabel("Package Name").setStyle(TextInputStyle.Short).setRequired(true).setValue(draft.name || "");
+        const link = new TextInputBuilder().setCustomId("purchase_link").setLabel("Roblox Purchase Link").setStyle(TextInputStyle.Short).setRequired(true).setValue(draft.purchase_link || "");
+        const packer = new TextInputBuilder().setCustomId("packer_id").setLabel("Packer Discord User ID (paste ID)").setStyle(TextInputStyle.Short).setRequired(true).setValue(draft.packer_id || "");
+        const price = new TextInputBuilder().setCustomId("price").setLabel("Price (Robux)").setStyle(TextInputStyle.Short).setRequired(true).setValue(draft.price ? String(draft.price) : "");
+        const items = new TextInputBuilder().setCustomId("items").setLabel("Included Items (one per line)").setStyle(TextInputStyle.Paragraph).setRequired(true).setValue(draft.included_items?.join("\n") || "");
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(name),
@@ -586,16 +572,16 @@ export function registerPackageSystem(client, config) {
           return;
         }
 
-        db.prepare(
-          `INSERT INTO packages (name, purchase_link, asset_id, price, packer_id, included_items, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(draft.name, draft.purchase_link, draft.asset_id, draft.price, draft.packer_id, JSON.stringify(draft.included_items), Date.now());
+        db.prepare(`
+          INSERT INTO packages (name, purchase_link, asset_id, price, packer_id, included_items, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(draft.name, draft.purchase_link, draft.asset_id, draft.price, draft.packer_id, JSON.stringify(draft.included_items), Date.now());
 
         await safeReply(interaction, { content: "✅ Package saved." }, { ephemeral: true });
         return;
       }
 
-      // ---------- SEND flow ----------
+      // ---------- SEND wizard (DM) ----------
       if (interaction.isStringSelectMenu() && interaction.customId === IDS.send_pick_pkg) {
         const pkgId = Number(interaction.values[0]);
         const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(pkgId);
@@ -605,8 +591,7 @@ export function registerPackageSystem(client, config) {
           return;
         }
 
-        const send = db
-          .prepare("INSERT INTO sends (user_id, package_id, forum_key, created_at) VALUES (?, ?, ?, ?)")
+        const send = db.prepare("INSERT INTO sends (user_id, package_id, forum_key, created_at) VALUES (?, ?, ?, ?)")
           .run(interaction.user.id, pkgId, "uniforms", Date.now());
 
         const sendId = send.lastInsertRowid;
@@ -631,11 +616,9 @@ export function registerPackageSystem(client, config) {
 
         await safeFollowUp(interaction, {
           content: "When finished uploading images:",
-          components: [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`${IDS.send_done_images}:${sendId}`).setLabel("Done Images").setStyle(ButtonStyle.Primary)
-            )
-          ]
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${IDS.send_done_images}:${sendId}`).setLabel("Done Images").setStyle(ButtonStyle.Primary)
+          )]
         });
 
         return;
@@ -660,11 +643,9 @@ export function registerPackageSystem(client, config) {
 
         await safeFollowUp(interaction, {
           content: "When finished uploading the file:",
-          components: [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`${IDS.send_done_file}:${sendId}`).setLabel("Done File").setStyle(ButtonStyle.Primary)
-            )
-          ]
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${IDS.send_done_file}:${sendId}`).setLabel("Done File").setStyle(ButtonStyle.Primary)
+          )]
         });
 
         return;
@@ -674,30 +655,17 @@ export function registerPackageSystem(client, config) {
         const sendId = Number(interaction.customId.split(":")[1]);
 
         const sendRow = db.prepare("SELECT * FROM sends WHERE id=?").get(sendId);
-        if (!sendRow) {
-          await safeReply(interaction, { content: "Send session not found." });
-          return;
-        }
+        if (!sendRow) return void (await safeReply(interaction, { content: "Send session not found." }));
 
         const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(sendRow.package_id);
-        if (!pkg) {
-          await safeReply(interaction, { content: "Package not found." });
-          return;
-        }
+        if (!pkg) return void (await safeReply(interaction, { content: "Package not found." }));
 
         const imgs = db.prepare("SELECT url FROM send_images WHERE send_id=?").all(sendId).map((r) => r.url);
         const fileRow = db.prepare("SELECT * FROM send_file WHERE send_id=?").get(sendId);
-
-        if (!fileRow) {
-          await safeReply(interaction, { content: "No product file recorded. Upload the file first." });
-          return;
-        }
+        if (!fileRow) return void (await safeReply(interaction, { content: "No product file recorded. Upload the file first." }));
 
         const forumId = cfg.forumChannels?.[sendRow.forum_key];
-        if (!forumId) {
-          await safeReply(interaction, { content: "Forum channel ID missing in config." });
-          return;
-        }
+        if (!forumId) return void (await safeReply(interaction, { content: "Forum channel ID missing in config." }));
 
         const forum = await interaction.client.channels.fetch(forumId).catch(() => null);
         if (!forum || forum.type !== ChannelType.GuildForum) {
@@ -722,29 +690,27 @@ export function registerPackageSystem(client, config) {
         return;
       }
 
-      // ---------- CLAIM ----------
+      // ---------- CLAIM (guild thread button) ----------
       if (interaction.isButton() && interaction.customId === IDS.claim) {
         await safeDeferReply(interaction, { ephemeral: true });
 
         const threadId = interaction.channel?.id;
-        if (!threadId) {
-          await interaction.editReply("Missing thread context.");
-          return;
-        }
+        if (!threadId) return void (await interaction.editReply("Missing thread context."));
 
         const sendRow = db.prepare("SELECT * FROM sends WHERE thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId);
-        if (!sendRow) {
-          await interaction.editReply("This thread isn't linked to a send session.");
-          return;
-        }
+        if (!sendRow) return void (await interaction.editReply("This thread isn't linked to a send session."));
 
         const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(sendRow.package_id);
-        if (!pkg) {
-          await interaction.editReply("Package not found.");
-          return;
-        }
+        if (!pkg) return void (await interaction.editReply("Package not found."));
 
-        // ✅ Must have a verified purchase (Roblox group sale watcher writes these)
+        console.log("CLAIM CHECK:", {
+          discordUserId: interaction.user.id,
+          pkgId: pkg.id,
+          pkgName: pkg.name,
+          pkgAssetId: String(pkg.asset_id),
+          threadId
+        });
+
         const purchase = db.prepare(`
           SELECT * FROM purchases
           WHERE discord_user_id=?
@@ -754,16 +720,20 @@ export function registerPackageSystem(client, config) {
           LIMIT 1
         `).get(interaction.user.id, String(pkg.asset_id));
 
+        console.log("PURCHASE FOUND?", !!purchase, purchase ? {
+          purchaseId: purchase.id,
+          purchaseAssetId: purchase.asset_id,
+          purchaseItemName: purchase.item_name,
+          purchased_at: purchase.purchased_at
+        } : null);
+
         if (!purchase) {
-          await interaction.editReply("❌ No verified purchase found for your account. Please buy the product first.");
+          await interaction.editReply("❌ No verified purchase found for your account.");
           return;
         }
 
-        db.prepare(`
-          UPDATE purchases
-          SET claimed_at=?, claimed_send_id=?
-          WHERE id=?
-        `).run(Date.now(), sendRow.id, purchase.id);
+        db.prepare("UPDATE purchases SET claimed_at=?, claimed_send_id=? WHERE id=?")
+          .run(Date.now(), sendRow.id, purchase.id);
 
         const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
 
@@ -777,7 +747,8 @@ export function registerPackageSystem(client, config) {
 
         const msg = await dm.send(dmPayload);
 
-        db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?").run(msg.id, dm.channel.id, sendRow.id);
+        db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
+          .run(msg.id, dm.channel.id, sendRow.id);
 
         await interaction.editReply("✅ Check your DMs.");
         return;
@@ -787,25 +758,88 @@ export function registerPackageSystem(client, config) {
       if (interaction.isButton() && interaction.customId.startsWith(`${IDS.download}:`)) {
         const sendId = Number(interaction.customId.split(":")[1]);
 
-        // ✅ DMs can't do ephemeral. Defer normally.
+        // ✅ DMs cannot use ephemeral. Defer normally.
         await safeDeferReply(interaction);
 
         const fileRow = db.prepare("SELECT * FROM send_file WHERE send_id=?").get(sendId);
-        if (!fileRow) {
-          await interaction.editReply("File not found for this package.");
-          return;
-        }
+        if (!fileRow) return void (await interaction.editReply("File not found for this package."));
 
         const res = await fetch(fileRow.attachment_url);
-        if (!res.ok) {
-          await interaction.editReply("Could not fetch the product file.");
-          return;
-        }
+        if (!res.ok) return void (await interaction.editReply("Could not fetch the product file."));
 
         const buf = Buffer.from(await res.arrayBuffer());
         const attachment = new AttachmentBuilder(buf, { name: fileRow.filename });
 
         await interaction.editReply({ content: "✅ Download:", files: [attachment] });
+        return;
+      }
+
+      // ---------- DELETE flow (unchanged but kept) ----------
+      if (interaction.isStringSelectMenu() && interaction.customId.startsWith(`${IDS.delete_pick}:`)) {
+        const [, ownerId] = interaction.customId.split(":");
+        if (ownerId !== interaction.user.id) return void (await safeReply(interaction, { content: "This delete menu isn't for you." }, { ephemeral: true }));
+
+        const pkgId = Number(interaction.values[0]);
+        const pkg = db.prepare("SELECT id, name FROM packages WHERE id=?").get(pkgId);
+        if (!pkg) return void (await safeReply(interaction, { content: "Package not found." }, { ephemeral: true }));
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${IDS.delete_confirm}:${pkgId}:${interaction.user.id}`).setLabel("Yes, delete").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`${IDS.delete_cancel}:${interaction.user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+        );
+
+        await safeReply(interaction, {
+          content: `⚠️ Are you sure you want to delete **${pkg.name}**?\nThis will also delete any forum threads created for it.`,
+          components: [row]
+        }, { ephemeral: true });
+        return;
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith(`${IDS.delete_cancel}:`)) {
+        const ownerId = interaction.customId.split(":")[1];
+        if (ownerId !== interaction.user.id) return void (await safeReply(interaction, { content: "Not your button." }, { ephemeral: true }));
+        await safeReply(interaction, { content: "✅ Cancelled." }, { ephemeral: true });
+        return;
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith(`${IDS.delete_confirm}:`)) {
+        const [, pkgIdStr, ownerId] = interaction.customId.split(":");
+        if (ownerId !== interaction.user.id) return void (await safeReply(interaction, { content: "Not your delete confirm." }, { ephemeral: true }));
+
+        const pkgId = Number(pkgIdStr);
+        const pkg = db.prepare("SELECT id, name FROM packages WHERE id=?").get(pkgId);
+        if (!pkg) return void (await safeReply(interaction, { content: "Package already deleted / not found." }, { ephemeral: true }));
+
+        const threads = db
+          .prepare("SELECT thread_id FROM sends WHERE package_id=? AND thread_id IS NOT NULL")
+          .all(pkgId)
+          .map((r) => r.thread_id)
+          .filter(Boolean);
+
+        let deletedThreads = 0;
+        for (const tid of threads) {
+          try {
+            const ch = await interaction.client.channels.fetch(tid).catch(() => null);
+            if (ch && "delete" in ch) {
+              await ch.delete(`Package deleted by ${interaction.user.tag}`);
+              deletedThreads++;
+            }
+          } catch {}
+        }
+
+        const tx = db.transaction((id) => {
+          const sendIds = db.prepare("SELECT id FROM sends WHERE package_id=?").all(id).map((r) => r.id);
+          for (const sid of sendIds) {
+            db.prepare("DELETE FROM send_images WHERE send_id=?").run(sid);
+            db.prepare("DELETE FROM send_file WHERE send_id=?").run(sid);
+          }
+          db.prepare("DELETE FROM sends WHERE package_id=?").run(id);
+          db.prepare("DELETE FROM packages WHERE id=?").run(id);
+        });
+
+        tx(pkgId);
+
+        await safeReply(interaction, { content: `🗑️ Deleted **${pkg.name}**.\nDeleted forum threads: **${deletedThreads}**.` }, { ephemeral: true });
         return;
       }
     } catch (err) {
@@ -834,7 +868,9 @@ export function registerPackageSystem(client, config) {
       for (const a of msg.attachments.values()) {
         const url = a.url;
         const name = a.name || "file.bin";
-        const isImage = (a.contentType || "").startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(name);
+        const isImage =
+          (a.contentType || "").startsWith("image/") ||
+          /\.(png|jpe?g|webp|gif)$/i.test(name);
 
         if (isImage) {
           db.prepare("INSERT INTO send_images (send_id, url) VALUES (?, ?)").run(recent.id, url);
@@ -850,16 +886,22 @@ export function registerPackageSystem(client, config) {
 }
 
 /*
-==================== IMPORTANT CONFIG CHANGE ====================
-Your current config.json packages block is missing groupId.
+==================== YOUR CONFIG.JSON ====================
+You currently have:
 
-Add this:
+"packages": {
+  "staffRoleId": "...",
+  "storageChannelId": "...",
+  "forumChannels": {...}
+}
+
+To make verified purchases work, ADD groupId:
 
 "packages": {
   "staffRoleId": "1467409087515070464",
   "storageChannelId": "1467859186904731785",
-  "groupId": 12345678,                 <-- ✅ ADD THIS (Roblox group id)
-  "pollMs": 20000,                     <-- optional
+  "groupId": 12345678,           // ✅ REQUIRED FOR VERIFICATION
+  "pollMs": 20000,               // optional
   "forumChannels": {
     "uniforms": "1467859457726877850",
     "graphics": "1467855193415745619",
@@ -871,7 +913,18 @@ Add this:
 DISCORD_TOKEN=...
 CLIENT_ID=...
 BLOXLINK_API_KEY=...
-ROBLOX_COOKIE=...   (.ROBLOSECURITY)
+ROBLOX_COOKIE=...        // .ROBLOSECURITY
 
-If you do NOT sell via group sales, the watcher cannot verify purchases.
+==================== WHAT TO LOOK FOR IN LOGS ====================
+After you buy + click claim:
+
+1) You should see: SALE SEEN: { itemId: ..., buyerId: ... }
+2) Then: BLOXLINK OK: { discordId: ... }
+3) Then: ✅ PURCHASE STORED: { asset_id: ... }
+
+When you click claim:
+- CLAIM CHECK shows pkgAssetId
+- PURCHASE FOUND? should be true
+
+If SALE SEEN appears but PURCHASE FOUND is false → pkgAssetId != itemId (ID mismatch).
 */
