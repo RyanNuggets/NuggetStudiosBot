@@ -220,7 +220,10 @@ function packagePreviewEmbed(draft) {
 
 function buildThreadEmbed(pkg, packerPing) {
   const dot = "<:dot:1467233440117297203>";
+
   const descriptionLines = [
+    `## [${pkg.name}](${pkg.purchase_link})`,
+    "",
     `**<:people:1467165138259018005> Packer:** ${packerPing}`,
     `**<:card:1467165047624302664> Price:** R$${pkg.price}`,
     "",
@@ -233,7 +236,7 @@ function buildThreadEmbed(pkg, packerPing) {
   return {
     embeds: [
       {
-        title: `[${pkg.name}](${pkg.purchase_link})`,
+        // ✅ title fully removed
         description: descriptionLines.join("\n"),
         fields: [{ name: "", value: "" }],
         image: {
