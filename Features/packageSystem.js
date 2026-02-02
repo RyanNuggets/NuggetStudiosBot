@@ -752,7 +752,7 @@ try {
   const msg = await dm.send(dmPayload);
 
   db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
-    .run(msg.id, dm.channel.id, sendRow.id);
+  .run(msg.id, dm.id, sendRow.id);
 
   await interaction.editReply(
     "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
