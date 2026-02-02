@@ -218,7 +218,7 @@ export function registerPackageSystem(client, config) {
 
   const db = openDb();
 
-  client.once("clientReady", async () => {
+  client.once("ready", async () => {
     try {
       const token = process.env.DISCORD_TOKEN;
       const clientId = process.env.CLIENT_ID;
