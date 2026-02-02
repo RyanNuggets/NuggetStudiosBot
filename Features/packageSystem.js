@@ -753,9 +753,10 @@ export function registerPackageSystem(client, config) {
         db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
           .run(msg.id, dm.channel.id, sendRow.id);
 
-        await interaction.editReply("✅ Check your DMs.");
-        return;
-      }
+      await interaction.editReply(
+      "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
+    );
+      return;
 
       // ---------- DOWNLOAD (DM button) ----------
       if (interaction.isButton() && interaction.customId.startsWith(`${IDS.download}:`)) {
