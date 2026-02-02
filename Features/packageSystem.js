@@ -693,79 +693,116 @@ export function registerPackageSystem(client, config) {
         return;
       }
 
-      // ---------- CLAIM (guild thread button) ----------
-      if (interaction.isButton() && interaction.customId === IDS.claim) {
-        await safeDeferReply(interaction, { ephemeral: true });
+// ---------- CLAIM (guild thread button) ----------
+if (interaction.isButton() && interaction.customId === IDS.claim) {
+  await safeDeferReply(interaction, { ephemeral: true });
 
-        const threadId = interaction.channel?.id;
-        if (!threadId) return void (await interaction.editReply("Missing thread context."));
+  const threadId = interaction.channel?.id;
+  if (!threadId) {
+    await interaction.editReply("Missing thread context.");
+    return;
+  }
 
-        const sendRow = db.prepare("SELECT * FROM sends WHERE thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId);
-        if (!sendRow) return void (await interaction.editReply("This thread isn't linked to a send session."));
+  const sendRow = db
+    .prepare("SELECT * FROM sends WHERE thread_id=? ORDER BY created_at DESC LIMIT 1")
+    .get(threadId);
 
-        const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(sendRow.package_id);
-        if (!pkg) return void (await interaction.editReply("Package not found."));
+  if (!sendRow) {
+    await interaction.editReply("This thread isn't linked to a send session.");
+    return;
+  }
 
-        console.log("CLAIM CHECK:", {
-          discordUserId: interaction.user.id,
-          pkgId: pkg.id,
-          pkgName: pkg.name,
-          pkgAssetId: String(pkg.asset_id),
-          threadId
-        });
+  const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(sendRow.package_id);
+  if (!pkg) {
+    await interaction.editReply("Package not found.");
+    return;
+  }
 
-        const purchase = db.prepare(`
-          SELECT * FROM purchases
-          WHERE discord_user_id=?
-            AND asset_id=?
-            AND claimed_at IS NULL
-          ORDER BY purchased_at DESC
-          LIMIT 1
-        `).get(interaction.user.id, String(pkg.asset_id));
+  console.log("CLAIM CHECK:", {
+    discordUserId: interaction.user.id,
+    pkgId: pkg.id,
+    pkgName: pkg.name,
+    pkgAssetId: String(pkg.asset_id),
+    threadId
+  });
 
-        console.log("PURCHASE FOUND?", !!purchase, purchase ? {
+  // ✅ Find latest purchase (claimed or not)
+  const purchase = db
+    .prepare(
+      `
+      SELECT * FROM purchases
+      WHERE discord_user_id=?
+        AND asset_id=?
+      ORDER BY purchased_at DESC
+      LIMIT 1
+    `
+    )
+    .get(interaction.user.id, String(pkg.asset_id));
+
+  console.log(
+    "PURCHASE FOUND?",
+    !!purchase,
+    purchase
+      ? {
           purchaseId: purchase.id,
           purchaseAssetId: purchase.asset_id,
           purchaseItemName: purchase.item_name,
-          purchased_at: purchase.purchased_at
-        } : null);
-
-        if (!purchase) {
-          await interaction.editReply("❌ No verified purchase found for your account.");
-          return;
+          purchased_at: purchase.purchased_at,
+          claimed_at: purchase.claimed_at
         }
-
-        db.prepare("UPDATE purchases SET claimed_at=?, claimed_send_id=? WHERE id=?")
-          .run(Date.now(), sendRow.id, purchase.id);
-
-try {
-  const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
-
-  const dm = await interaction.user.createDM();
-  const dmPayload = buildDmThanksComponents({
-    robloxUser,
-    price: pkg.price,
-    productName: pkg.name,
-    sendId: sendRow.id
-  });
-
-  const msg = await dm.send(dmPayload);
-
-  db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?")
-  .run(msg.id, dm.id, sendRow.id);
-
-  await interaction.editReply(
-    "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
+      : null
   );
-  return;
-} catch (e) {
-  console.error("CLAIM DM SEND ERROR:", e);
 
-  await interaction.editReply(
-    "⚠️ I couldn't DM you. Please enable **Direct Messages** from server members (Privacy Settings) and try again."
-  );
-  return;
-}
+  if (!purchase) {
+    await interaction.editReply("❌ No verified purchase found for your account.");
+    return;
+  }
+
+  // ✅ If already claimed, don't block them with "no verified purchase"
+  if (purchase.claimed_at) {
+    await interaction.editReply("✅ You already claimed this purchase. Check your DMs.");
+    return;
+  }
+
+  try {
+    const robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+
+    const dm = await interaction.user.createDM();
+    const dmPayload = buildDmThanksComponents({
+      robloxUser,
+      price: pkg.price,
+      productName: pkg.name,
+      sendId: sendRow.id
+    });
+
+    const msg = await dm.send(dmPayload);
+
+    // ✅ dm is the channel, use dm.id (not dm.channel.id)
+    db.prepare("UPDATE sends SET dm_message_id=?, dm_channel_id=? WHERE id=?").run(
+      msg.id,
+      dm.id,
+      sendRow.id
+    );
+
+    // ✅ Mark purchase claimed ONLY after DM succeeded
+    db.prepare("UPDATE purchases SET claimed_at=?, claimed_send_id=? WHERE id=?").run(
+      Date.now(),
+      sendRow.id,
+      purchase.id
+    );
+
+    await interaction.editReply(
+      "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
+    );
+    return;
+  } catch (e) {
+    console.error("CLAIM DM SEND ERROR:", e);
+
+    await interaction.editReply(
+      "⚠️ Something went wrong while sending your package. If you got the DM, you're fine. If not, enable **Direct Messages** and try again."
+    );
+    return;
+  }
 }
       
       // ---------- DOWNLOAD (DM button) ----------
