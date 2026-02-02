@@ -24,7 +24,17 @@
 
   "reviewChannelId": "1467409006787166238"
 },
+  
+ "packages": {
+    "staffRoleId": "1467409087515070464",
+    "storageChannelId": "1467859186904731785",
 
+    "forumChannels": {
+      "uniforms": "1467859457726877850",
+      "graphics": "1467855193415745619",
+      "livery": "1467859474588110962"
+},
+   
   "welcome": {
     "enabled": true,
     "channelId": "1467409530303549655"
