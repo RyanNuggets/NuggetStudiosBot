@@ -757,7 +757,8 @@ export function registerPackageSystem(client, config) {
       "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
     );
       return;
-
+}
+        
       // ---------- DOWNLOAD (DM button) ----------
       if (interaction.isButton() && interaction.customId.startsWith(`${IDS.download}:`)) {
         const sendId = Number(interaction.customId.split(":")[1]);
