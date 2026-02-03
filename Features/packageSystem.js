@@ -703,6 +703,9 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
     return;
   }
 
+  // 1. Fetch the user's Roblox name IMMEDIATELY so we have it for any message
+  let robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+
   const sendRow = db
     .prepare("SELECT * FROM sends WHERE thread_id=? ORDER BY created_at DESC LIMIT 1")
     .get(threadId);
@@ -713,70 +716,42 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
   }
 
   const pkg = db.prepare("SELECT * FROM packages WHERE id=?").get(sendRow.package_id);
-  if (!pkg) {
-    await interaction.editReply("Package not found.");
-    return;
-  }
-
-  console.log("CLAIM CHECK:", {
-    discordUserId: interaction.user.id,
-    pkgId: pkg.id,
-    pkgName: pkg.name,
-    pkgAssetId: String(pkg.asset_id),
-    threadId
-  });
-
-  // ✅ Find latest purchase (claimed or not)
+  
+  // 2. Check the purchase
   const purchase = db
-    .prepare(
-      `
+    .prepare(`
       SELECT * FROM purchases
       WHERE discord_user_id=?
         AND asset_id=?
       ORDER BY purchased_at DESC
       LIMIT 1
-    `
-    )
+    `)
     .get(interaction.user.id, String(pkg.asset_id));
 
-  console.log(
-    "PURCHASE FOUND?",
-    !!purchase,
-    purchase
-      ? {
-          purchaseId: purchase.id,
-          purchaseAssetId: purchase.asset_id,
-          purchaseItemName: purchase.item_name,
-          purchased_at: purchase.purchased_at,
-          claimed_at: purchase.claimed_at
-        }
-      : null
-  );
-
-if (!purchase) {
-  await interaction.editReply(
-    `<:cross:1467165380714823966> We could not verify any purchase found for your account. If you purchased it already, make sure you linked the correct Roblox account, then press **Claim Package** again.
+  // 3. Now if there's no purchase, ${robloxUser} actually exists!
+  if (!purchase) {
+    await interaction.editReply(
+      `<:cross:1467165380714823966> We could not verify any purchase found for your account. If you purchased it already, make sure you linked the correct Roblox account, then press **Claim Package** again.
 
 **Roblox Username:** ${robloxUser || "Unknown"}`
-  );
+    );
     return;
   }
 
-try {
-  let robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+  // 4. Proceed to DM
+  try {
+    // Extra safety: if Bloxlink failed but the DB has their name from the sale, use that
+    if (!robloxUser && purchase.roblox_username) {
+      robloxUser = purchase.roblox_username;
+    }
 
-  // fallback to stored purchase username
-  if (!robloxUser && purchase.roblox_username) {
-    robloxUser = purchase.roblox_username;
-  }
-
-  const dm = await interaction.user.createDM();
-  const dmPayload = buildDmThanksComponents({
-    robloxUser,
-    price: pkg.price,
-    productName: pkg.name,
-    sendId: sendRow.id
-  });
+    const dm = await interaction.user.createDM();
+    const dmPayload = buildDmThanksComponents({
+      robloxUser,
+      price: pkg.price,
+      productName: pkg.name,
+      sendId: sendRow.id
+    });
 
     const msg = await dm.send(dmPayload);
 
