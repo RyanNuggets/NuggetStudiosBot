@@ -32,9 +32,18 @@
   },
 
   "purchaseMonitor": {
-  "channelId": "1468123389569925244",
-  "proxyUrl": "http://180.183.157.159:8080"
-},
+    "channelId": "1468123389569925244",
+    "proxyUrl": "http://180.183.157.159:8080"
+  },
+
+  "price": {
+    "proxyUrl": "http://dxhfdejy:v51znmjlvb1j@23.229.19.94:8689",
+    "payment": {
+      "assetId": 70853736927027,
+      "allowedRoleId": "1467409061459923004",
+      "logChannelId": "1467819121801433108"
+    }
+  },
 
   "welcome": {
     "enabled": true,
