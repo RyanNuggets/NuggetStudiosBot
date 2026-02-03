@@ -703,8 +703,19 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
     return;
   }
 
-  // 1. Fetch the user's Roblox name IMMEDIATELY so we have it for any message
+  // 1. Try to get the name from Bloxlink first (Live Data)
   let robloxUser = await getRobloxUsernameViaBloxlink(interaction.user.id);
+
+  // 2. BACKUP: If Bloxlink fails, check our own Database (Past Data)
+  if (!robloxUser) {
+    const historicalRecord = db.prepare(
+      "SELECT roblox_username FROM purchases WHERE discord_user_id = ? AND roblox_username IS NOT NULL LIMIT 1"
+    ).get(interaction.user.id);
+    
+    if (historicalRecord) {
+      robloxUser = historicalRecord.roblox_username;
+    }
+  }
 
   const sendRow = db
     .prepare("SELECT * FROM sends WHERE thread_id=? ORDER BY created_at DESC LIMIT 1")
