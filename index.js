@@ -11,6 +11,12 @@ import registerTaxModule from "./Features/tax.js";
 // ✅ Package system
 import { registerPackageSystem } from "./Features/packageSystem.js";
 
+// ✅ Purchase monitor + /payment command (CommonJS modules)
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const purchaseMonitor = require("./purchasemonitor.js");
+const paymentCommand = require("./payment.js"); // make sure you created payment.js
+
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const config = readConfig();
@@ -26,6 +32,12 @@ const client = new Client({
   ],
   partials: [Partials.Channel]
 });
+
+// ✅ Add this so purchasemonitor.js can call client.logs.custom / error
+client.logs = {
+  custom: (...args) => console.log("[LOG]", ...args),
+  error: (...args) => console.error("[ERROR]", ...args)
+};
 
 // Toggle these to true only when you want to post the messages once.
 const POST_DASHBOARD_ON_START = true;
@@ -67,11 +79,53 @@ client.once("ready", async () => {
       console.error("❌ Failed to send order hub:", err);
     }
   }
+
+  // ---------------- Purchasemonitor index logic (ADDED) ----------------
+  // ✅ Register /payment command (guild-only for fast updates)
+  try {
+    const { REST, Routes } = await import("discord.js");
+
+    if (!process.env.CLIENT_ID || !config.guildId) {
+      console.log("[WARN] CLIENT_ID or config.guildId missing. Skipping /payment registration.");
+    } else {
+      const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+      await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, config.guildId), {
+        body: [paymentCommand.data.toJSON()]
+      });
+
+      console.log("✅ /payment command registered.");
+    }
+  } catch (err) {
+    console.error("❌ Failed to register /payment command:", err);
+  }
+
+  // ✅ Start purchase logging monitor
+  try {
+    // purchasemonitor.js exports { name, once, execute }
+    await purchaseMonitor.execute(client);
+    console.log("✅ Purchase logging module started successfully.");
+  } catch (error) {
+    console.error("❌ Error starting purchase logging module:", error);
+  }
 });
 
 // ---------------- INTERACTIONS ----------------
 client.on("interactionCreate", async (interaction) => {
   try {
+    // ✅ Handle /payment command (from purchasemonitor index)
+    if (interaction.isChatInputCommand() && interaction.commandName === "payment") {
+      try {
+        await paymentCommand.execute(interaction);
+      } catch (err) {
+        console.error("❌ /payment command error:", err);
+        if (!interaction.replied && interaction.isRepliable()) {
+          await interaction.reply({ content: "❌ Something went wrong.", ephemeral: true }).catch(() => {});
+        }
+      }
+      return;
+    }
+
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
