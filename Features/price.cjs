@@ -17,68 +17,81 @@ const { Routes } = require("discord-api-types/v10");
 function registerPriceModule(client, agent, paymentConfig, config) {
 // ---------- Slash command registration (guild) ----------
 client.once("ready", async () => {
-  try {
-    const token = process.env.TOKEN || process.env.DISCORD_TOKEN;
-    const clientId = process.env.CLIENT_ID;
-    const guildId = config?.guildId;
+  // ✅ Let packageSystem finish its own guild PUT registration first
+  setTimeout(async () => {
+    try {
+      const token = process.env.TOKEN || process.env.DISCORD_TOKEN;
+      const clientId = process.env.CLIENT_ID;
+      const guildId = config?.guildId;
 
-    if (!token) {
-      console.warn("⚠️ /price not registered: missing TOKEN (or DISCORD_TOKEN).");
-      return;
-    }
-    if (!clientId) {
-      console.warn("⚠️ /price not registered: missing CLIENT_ID.");
-      return;
-    }
-    if (!guildId) {
-      console.warn("⚠️ /price not registered: missing config.guildId.");
-      return;
-    }
+      if (!token) {
+        console.warn("⚠️ /price not registered: missing TOKEN (or DISCORD_TOKEN).");
+        return;
+      }
+      if (!clientId) {
+        console.warn("⚠️ /price not registered: missing CLIENT_ID.");
+        return;
+      }
+      if (!guildId) {
+        console.warn("⚠️ /price not registered: missing config.guildId.");
+        return;
+      }
 
-    const rest = new REST({ version: "10" }).setToken(token);
+      const rest = new REST({ version: "10" }).setToken(token);
 
-    const priceCommand = {
-      name: "price",
-      description: "Update a Roblox collectible price (keeps item on sale)",
-      options: [
-        {
-          name: "amount",
-          description: "New price in Robux",
-          type: 4, // INTEGER
-          required: true
-        },
-        {
-          name: "assetid",
-          description: "Optional asset ID (defaults to config)",
-          type: 3, // STRING
-          required: false
+      const priceCommand = {
+        name: "price",
+        description: "Update a Roblox collectible price (keeps item on sale)",
+        options: [
+          {
+            name: "amount",
+            description: "New price in Robux",
+            type: 4, // INTEGER
+            required: true
+          },
+          {
+            name: "assetid",
+            description: "Optional asset ID (defaults to config)",
+            type: 3, // STRING
+            required: false
+          }
+        ]
+      };
+
+      const existing = await rest.get(Routes.applicationGuildCommands(clientId, guildId));
+
+      const existingCmd = Array.isArray(existing)
+        ? existing.find((c) => (c.name || "").toLowerCase() === "price")
+        : null;
+
+      if (existingCmd?.id) {
+        try {
+          await rest.patch(Routes.applicationGuildCommand(clientId, guildId, existingCmd.id), {
+            body: priceCommand
+          });
+          console.log("✅ /price slash command updated (guild) without overwriting other commands.");
+        } catch (e) {
+          // ✅ If packageSystem overwrote commands between GET and PATCH, create fresh
+          const msg = e?.message || "";
+          if (msg.toLowerCase().includes("unknown application command")) {
+            await rest.post(Routes.applicationGuildCommands(clientId, guildId), {
+              body: priceCommand
+            });
+            console.log("✅ /price slash command re-created (guild) after overwrite.");
+          } else {
+            throw e;
+          }
         }
-      ]
-    };
-
-    // ✅ Get current guild commands (so we don't overwrite package commands)
-    const existing = await rest.get(Routes.applicationGuildCommands(clientId, guildId));
-
-    const existingCmd = Array.isArray(existing)
-      ? existing.find((c) => (c.name || "").toLowerCase() === "price")
-      : null;
-
-    if (existingCmd?.id) {
-      // ✅ Update existing /price
-      await rest.patch(Routes.applicationGuildCommand(clientId, guildId, existingCmd.id), {
-        body: priceCommand
-      });
-      console.log("✅ /price slash command updated (guild) without overwriting other commands.");
-    } else {
-      // ✅ Create /price
-      await rest.post(Routes.applicationGuildCommands(clientId, guildId), {
-        body: priceCommand
-      });
-      console.log("✅ /price slash command created (guild) without overwriting other commands.");
+      } else {
+        await rest.post(Routes.applicationGuildCommands(clientId, guildId), {
+          body: priceCommand
+        });
+        console.log("✅ /price slash command created (guild) without overwriting other commands.");
+      }
+    } catch (err) {
+      console.error("❌ Failed to upsert /price command:", err?.message || err);
     }
-  } catch (err) {
-    console.error("❌ Failed to upsert /price command:", err?.message || err);
-  }
+  }, 2500); // 2.5s is usually enough
 });
 
   // ---------- Interaction handler (same logic as your message command) ----------
