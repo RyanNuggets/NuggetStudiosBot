@@ -753,8 +753,12 @@ if (interaction.isButton() && interaction.customId === IDS.claim) {
       : null
   );
 
-  if (!purchase) {
-    await interaction.editReply("❌ No verified purchase found for your account.");
+if (!purchase) {
+  await interaction.editReply(
+    `<:cross:1467165380714823966> We could not verify any purchase found for your account. If you purchased it already, make sure you linked the correct Roblox account, then press **Claim Package** again.
+
+**Roblox Username:** ${robloxUser || "Unknown"}`
+  );
     return;
   }
 
@@ -791,7 +795,7 @@ try {
     );
 
     await interaction.editReply(
-      "📬 **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
+      "<:giftbox:1467165208022745220> **Look at your DMs!**\nYour package has been sent there. Click **Download Product** to receive it."
     );
     return;
   } catch (e) {
@@ -820,7 +824,7 @@ try {
         const buf = Buffer.from(await res.arrayBuffer());
         const attachment = new AttachmentBuilder(buf, { name: fileRow.filename });
 
-        await interaction.editReply({ content: "✅ Download:", files: [attachment] });
+        await interaction.editReply({ content: "Download:", files: [attachment] });
         return;
       }
 
