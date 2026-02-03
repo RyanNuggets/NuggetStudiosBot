@@ -14,7 +14,7 @@ import { registerPackageSystem } from "./Features/packageSystem.js";
 // ✅ Purchase monitor (CommonJS module)
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const purchaseMonitor = require("./Features/purchasemonitor.js");
+const purchaseMonitor = require("./Features/purchasemonitor.cjs");
 
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
