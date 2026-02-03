@@ -4,7 +4,7 @@ const fetch = require("node-fetch"); // install this
 const { HttpsProxyAgent } = require("https-proxy-agent"); // install this
 require("dotenv").config(); // install this
 
-const config = require("./config.json");
+const config = require("../config.json");
 
 // ---------------- CONFIG SOURCES ----------------
 // ✅ groupId now comes from config.packages.groupId (matches your packageSystem watcher)
