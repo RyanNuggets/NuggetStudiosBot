@@ -201,13 +201,13 @@ client.once("ready", async () => {
 
         // 4) SUCCESS EMBED
         const embed = new EmbedBuilder()
-          .setTitle("✅ Price Updated Successfully")
-          .setDescription(`**${itemName}** has been updated and kept **On Sale**.`)
+          .setTitle("<:checkmark:1467165412985798666> Price Updated Successfully")
+          .setDescription(`**${itemName}** has been updated.`)
           .addFields(
             { name: "New Price", value: `${newPrice} Robux`, inline: true },
             { name: "Asset ID", value: `${assetId}`, inline: true }
           )
-          .setColor("#00FF00")
+          .setColor("#f24578")
           .setTimestamp();
 
         await interaction.editReply({ content: null, embeds: [embed] });
