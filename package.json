@@ -9,6 +9,7 @@
   "dependencies": {
     "discord.js": "14.15.0",
     "noblox.js": "^6.2.0",
-    "better-sqlite3": "^11.8.1"
+    "better-sqlite3": "^11.8.1",
+    "https-proxy-agent": "^7.0.0"
   }
 }
