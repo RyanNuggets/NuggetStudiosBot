@@ -15,55 +15,71 @@ const { Routes } = require("discord-api-types/v10");
  * - config: full config.json (needed for guildId)
  */
 function registerPriceModule(client, agent, paymentConfig, config) {
-  // ---------- Slash command registration (guild) ----------
-  client.once("ready", async () => {
-    try {
-      const token = process.env.TOKEN || process.env.DISCORD_TOKEN;
-      const clientId = process.env.CLIENT_ID;
-      const guildId = config?.guildId;
+// ---------- Slash command registration (guild) ----------
+client.once("ready", async () => {
+  try {
+    const token = process.env.TOKEN || process.env.DISCORD_TOKEN;
+    const clientId = process.env.CLIENT_ID;
+    const guildId = config?.guildId;
 
-      if (!token) {
-        console.warn("⚠️ /price not registered: missing TOKEN (or DISCORD_TOKEN).");
-        return;
-      }
-      if (!clientId) {
-        console.warn("⚠️ /price not registered: missing CLIENT_ID.");
-        return;
-      }
-      if (!guildId) {
-        console.warn("⚠️ /price not registered: missing config.guildId.");
-        return;
-      }
-
-      const rest = new REST({ version: "10" }).setToken(token);
-
-      const commands = [
-        {
-          name: "price",
-          description: "Update a Roblox collectible price (keeps item on sale)",
-          options: [
-            {
-              name: "amount",
-              description: "New price in Robux",
-              type: 4, // INTEGER
-              required: true
-            },
-            {
-              name: "assetid",
-              description: "Optional asset ID (defaults to config)",
-              type: 3, // STRING
-              required: false
-            }
-          ]
-        }
-      ];
-
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-      console.log("✅ /price slash command registered (guild).");
-    } catch (err) {
-      console.error("❌ Failed to register /price command:", err?.message || err);
+    if (!token) {
+      console.warn("⚠️ /price not registered: missing TOKEN (or DISCORD_TOKEN).");
+      return;
     }
-  });
+    if (!clientId) {
+      console.warn("⚠️ /price not registered: missing CLIENT_ID.");
+      return;
+    }
+    if (!guildId) {
+      console.warn("⚠️ /price not registered: missing config.guildId.");
+      return;
+    }
+
+    const rest = new REST({ version: "10" }).setToken(token);
+
+    const priceCommand = {
+      name: "price",
+      description: "Update a Roblox collectible price (keeps item on sale)",
+      options: [
+        {
+          name: "amount",
+          description: "New price in Robux",
+          type: 4, // INTEGER
+          required: true
+        },
+        {
+          name: "assetid",
+          description: "Optional asset ID (defaults to config)",
+          type: 3, // STRING
+          required: false
+        }
+      ]
+    };
+
+    // ✅ Get current guild commands (so we don't overwrite package commands)
+    const existing = await rest.get(Routes.applicationGuildCommands(clientId, guildId));
+
+    const existingCmd = Array.isArray(existing)
+      ? existing.find((c) => (c.name || "").toLowerCase() === "price")
+      : null;
+
+    if (existingCmd?.id) {
+      // ✅ Update existing /price
+      await rest.patch(Routes.applicationGuildCommand(clientId, guildId, existingCmd.id), {
+        body: priceCommand
+      });
+      console.log("✅ /price slash command updated (guild) without overwriting other commands.");
+    } else {
+      // ✅ Create /price
+      await rest.post(Routes.applicationGuildCommands(clientId, guildId), {
+        body: priceCommand
+      });
+      console.log("✅ /price slash command created (guild) without overwriting other commands.");
+    }
+  } catch (err) {
+    console.error("❌ Failed to upsert /price command:", err?.message || err);
+  }
+});
 
   // ---------- Interaction handler (same logic as your message command) ----------
   client.on("interactionCreate", async (interaction) => {
