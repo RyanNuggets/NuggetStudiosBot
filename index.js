@@ -16,6 +16,25 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const purchaseMonitor = require("./Features/purchasemonitor.cjs");
 
+// ✅ Price module (CommonJS)
+const registerPriceModule = require("./Features/price.cjs");
+
+// ✅ Roblox/proxy deps (CommonJS libs)
+const noblox = require("noblox.js");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+
+// --- NODE 18+ CRASH FIX (kept from your secondary test) ---
+if (typeof globalThis.File === "undefined") {
+  const { Blob } = require("buffer");
+  globalThis.File = class extends Blob {
+    constructor(parts, filename, options = {}) {
+      super(parts, options);
+      this.name = filename;
+      this.lastModified = options.lastModified || Date.now();
+    }
+  };
+}
+
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const config = readConfig();
@@ -50,6 +69,17 @@ try {
   console.error("❌ Package system failed to load:", err);
 }
 
+// ✅ Setup Roblox proxy agent using config.price.proxyUrl
+const agent = new HttpsProxyAgent(config.price.proxyUrl);
+
+// ✅ Load /price module now (it will register the slash cmd on ready and listen for interactions)
+try {
+  registerPriceModule(client, agent, config.price.payment, config);
+  console.log("✅ Price module loaded (/price ready; will register on ready)");
+} catch (err) {
+  console.error("❌ Price module failed to load:", err);
+}
+
 // ---------------- READY ----------------
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -79,6 +109,22 @@ client.once("ready", async () => {
     }
   }
 
+  // ✅ Roblox login (same idea as your secondary test)
+  try {
+    const cookie = process.env.ROBLOX_COOKIE;
+    if (!cookie) {
+      console.error("❌ Missing ROBLOX_COOKIE env var");
+      process.exit(1);
+    }
+
+    console.log(`[Roblox] 🌐 Logging in via: ${config.price.proxyUrl}`);
+    const user = await noblox.setCookie(cookie, { agent });
+    console.log(`[Roblox] ✅ Authenticated as ${user.UserName}`);
+  } catch (err) {
+    console.error("[Critical] Roblox Login Error:", err.message);
+    process.exit(1);
+  }
+
   // ✅ Start purchase logging monitor
   try {
     // purchasemonitor.js exports { name, once, execute }
@@ -96,6 +142,7 @@ client.on("interactionCreate", async (interaction) => {
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
     // packageSystem handles its own interactions internally
+    // price.cjs handles /price internally
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
@@ -129,65 +176,3 @@ if (!process.env.CLIENT_ID) console.warn("⚠️ Missing CLIENT_ID env var (slas
 if (!process.env.DISCORD_TOKEN) console.warn("⚠️ Missing DISCORD_TOKEN env var (set it same as TOKEN).");
 
 client.login(process.env.TOKEN);
-
-Secondary testing index.js
-// --- NODE 18+ CRASH FIX ---
-if (typeof File === 'undefined') {
-    const { Blob } = require('buffer');
-    global.File = class extends Blob {
-        constructor(parts, filename, options = {}) {
-            super(parts, options);
-            this.name = filename;
-            this.lastModified = options.lastModified || Date.now();
-        }
-    };
-}
-
-const { Client, GatewayIntentBits } = require("discord.js");
-const noblox = require("noblox.js");
-const { HttpsProxyAgent } = require("https-proxy-agent");
-require("dotenv").config();
-
-const config = require("./config.json");
-const registerPriceModule = require("./Features/price.js");
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ],
-});
-
-// Setup Proxy Agent correctly
-const agent = new HttpsProxyAgent(config.proxyUrl);
-
-async function startBot() {
-    console.log("--- System Startup ---");
-    
-    const cookie = process.env.ROBLOX_COOKIE;
-    if (!cookie) {
-        console.error("❌ Missing ROBLOX_COOKIE in .env file");
-        process.exit(1);
-    }
-
-    try {
-        console.log(`[Roblox] 🌐 Logging in via: ${config.proxyUrl}`);
-        
-        // Use the agent directly inside setCookie
-        const user = await noblox.setCookie(cookie, { agent });
-        console.log(`[Roblox] ✅ Authenticated as ${user.UserName}`);
-
-        // Start Price Module
-        registerPriceModule(client, agent, config.payment);
-        
-        await client.login(process.env.DISCORD_TOKEN);
-    } catch (err) {
-        console.error("[Critical] Startup Error:", err.message);
-        process.exit(1);
-    }
-}
-
-client.once("ready", () => console.log(`[Discord] ✅ ${client.user.tag} is online`));
-
-startBot();
