@@ -2,7 +2,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import fs from "fs";
 
-// Existing modules (keep as-is)
+// Existing modules (keep as-is profession)
 import { sendDashboard, handleDashboardInteractions } from "./Features/dashboard.js";
 import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
@@ -129,3 +129,65 @@ if (!process.env.CLIENT_ID) console.warn("⚠️ Missing CLIENT_ID env var (slas
 if (!process.env.DISCORD_TOKEN) console.warn("⚠️ Missing DISCORD_TOKEN env var (set it same as TOKEN).");
 
 client.login(process.env.TOKEN);
+
+Secondary testing index.js
+// --- NODE 18+ CRASH FIX ---
+if (typeof File === 'undefined') {
+    const { Blob } = require('buffer');
+    global.File = class extends Blob {
+        constructor(parts, filename, options = {}) {
+            super(parts, options);
+            this.name = filename;
+            this.lastModified = options.lastModified || Date.now();
+        }
+    };
+}
+
+const { Client, GatewayIntentBits } = require("discord.js");
+const noblox = require("noblox.js");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+require("dotenv").config();
+
+const config = require("./config.json");
+const registerPriceModule = require("./Features/price.js");
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ],
+});
+
+// Setup Proxy Agent correctly
+const agent = new HttpsProxyAgent(config.proxyUrl);
+
+async function startBot() {
+    console.log("--- System Startup ---");
+    
+    const cookie = process.env.ROBLOX_COOKIE;
+    if (!cookie) {
+        console.error("❌ Missing ROBLOX_COOKIE in .env file");
+        process.exit(1);
+    }
+
+    try {
+        console.log(`[Roblox] 🌐 Logging in via: ${config.proxyUrl}`);
+        
+        // Use the agent directly inside setCookie
+        const user = await noblox.setCookie(cookie, { agent });
+        console.log(`[Roblox] ✅ Authenticated as ${user.UserName}`);
+
+        // Start Price Module
+        registerPriceModule(client, agent, config.payment);
+        
+        await client.login(process.env.DISCORD_TOKEN);
+    } catch (err) {
+        console.error("[Critical] Startup Error:", err.message);
+        process.exit(1);
+    }
+}
+
+client.once("ready", () => console.log(`[Discord] ✅ ${client.user.tag} is online`));
+
+startBot();
