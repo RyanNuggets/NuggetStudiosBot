@@ -11,11 +11,10 @@ import registerTaxModule from "./Features/tax.js";
 // ✅ Package system
 import { registerPackageSystem } from "./Features/packageSystem.js";
 
-// ✅ Purchase monitor + /payment command (CommonJS modules)
+// ✅ Purchase monitor (CommonJS module)
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const purchaseMonitor = require("./purchasemonitor.js");
-const paymentCommand = require("./payment.js"); // make sure you created payment.js
+const purchaseMonitor = require("./Features/purchasemonitor.js");
 
 // ---------------- CONFIG ----------------
 const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
@@ -80,26 +79,6 @@ client.once("ready", async () => {
     }
   }
 
-  // ---------------- Purchasemonitor index logic (ADDED) ----------------
-  // ✅ Register /payment command (guild-only for fast updates)
-  try {
-    const { REST, Routes } = await import("discord.js");
-
-    if (!process.env.CLIENT_ID || !config.guildId) {
-      console.log("[WARN] CLIENT_ID or config.guildId missing. Skipping /payment registration.");
-    } else {
-      const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-
-      await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, config.guildId), {
-        body: [paymentCommand.data.toJSON()]
-      });
-
-      console.log("✅ /payment command registered.");
-    }
-  } catch (err) {
-    console.error("❌ Failed to register /payment command:", err);
-  }
-
   // ✅ Start purchase logging monitor
   try {
     // purchasemonitor.js exports { name, once, execute }
@@ -113,19 +92,6 @@ client.once("ready", async () => {
 // ---------------- INTERACTIONS ----------------
 client.on("interactionCreate", async (interaction) => {
   try {
-    // ✅ Handle /payment command (from purchasemonitor index)
-    if (interaction.isChatInputCommand() && interaction.commandName === "payment") {
-      try {
-        await paymentCommand.execute(interaction);
-      } catch (err) {
-        console.error("❌ /payment command error:", err);
-        if (!interaction.replied && interaction.isRepliable()) {
-          await interaction.reply({ content: "❌ Something went wrong.", ephemeral: true }).catch(() => {});
-        }
-      }
-      return;
-    }
-
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
