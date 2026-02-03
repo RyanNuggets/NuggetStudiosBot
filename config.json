@@ -31,6 +31,11 @@
     }
   },
 
+  "purchaseMonitor": {
+  "channelId": "1467262297813684275",
+  "proxyUrl": "http://180.183.157.159:8080"
+},
+
   "welcome": {
     "enabled": true,
     "channelId": "1467409530303549655"
