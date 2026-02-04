@@ -46,8 +46,8 @@ const IDS = {
 const REVIEW_STATE = new Map();
 
 // Your custom emoji (NOTE: requires Use External Emojis if not from this server)
-const STAR_EMOJI = "<:star:1467246556649623694>";
-const STAR_EMOJI_OBJ = { id: "1467246556649623694", name: "star" };
+const STAR_EMOJI = "<:MC_star:1462872618540466412>";
+const STAR_EMOJI_OBJ = { id: "1462872618540466412", name: "MC_star" };
 
 // ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
@@ -72,9 +72,9 @@ const ORDER_HUB_LAYOUT = {
           content:
             "## **Order Here**\n" +
             "Looking for a **custom, high-quality banner or graphic**? Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
-            "<:shoppingcart:1467165075025432618> **Select an Order Type:**\n" +
-            "<:dot:1467233440117297203> **Standard Order**  **`-`**  Order a single custom banner or graphic\n" +
-            "<:dot:1467233440117297203> **Package Order**  **`-`**  Order multiple designs in one bundle"
+            "**Select an Order Type:**\n" +
+            "**Standard Order**  **`-`**  Order a single custom banner or graphic\n" +
+            "**Package Order**  **`-`**  Order multiple designs in one bundle"
         },
         { type: 14, spacing: 2 },
         {
@@ -106,9 +106,9 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
           "## **Payment Method**\n" +
           "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
           "**`-`** **Available Payment Options:**\n" +
-          "<:paypal:1467236926993072280> **PayPal**  **`-`**  Fast and secure online payments\n" +
-          "<:card:1467165047624302664> **Credit/Debit Cards**  **`-`**  All major credit/debit cards accepted\n" +
-          "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
+          "**PayPal**  **`-`**  Fast and secure online payments\n" +
+          "**Credit/Debit Cards**  **`-`**  All major credit/debit cards accepted\n" +
+          "**Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
           `**Order Type:** **${orderTypeLabel}**`
       }
     ],
