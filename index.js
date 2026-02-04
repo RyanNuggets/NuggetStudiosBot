@@ -11,11 +11,12 @@ import registerTaxModule from "./Features/tax.js";
 // ✅ Package system
 import { registerPackageSystem } from "./Features/packageSystem.js";
 
-// ✅ Purchase monitor REMOVED
-
-// ✅ Price module (CommonJS)
+// ✅ Purchase monitor (CommonJS module)
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
+const purchaseMonitor = require("./Features/purchasemonitor.cjs");
+
+// ✅ Price module (CommonJS)
 const registerPriceModule = require("./Features/price.cjs");
 
 // ✅ Roblox/proxy deps (CommonJS libs)
@@ -124,7 +125,14 @@ client.once("ready", async () => {
     process.exit(1);
   }
 
-  // ✅ Purchase logging monitor REMOVED
+  // ✅ Start purchase logging monitor
+  try {
+    // purchasemonitor.js exports { name, once, execute }
+    await purchaseMonitor.execute(client);
+    console.log("✅ Purchase logging module started successfully.");
+  } catch (error) {
+    console.error("❌ Error starting purchase logging module:", error);
+  }
 });
 
 // ---------------- INTERACTIONS ----------------
