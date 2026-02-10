@@ -551,8 +551,7 @@ export async function handleDashboardInteractions(client, interaction) {
         `## 🟢 **Ticket Opened**\n` +
           `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
           `> **Opener:** <@${interaction.user.id}>\n` +
-          `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**\n` +
-          `> **Staff Role:** <@&${staffRoleId}>`
+          `> **Type:** **${ticketTypeLabel(ticketTypeValue)}**`
       );
       await logTicketMessage(client, conf, openedLog);
     } catch (e) {
@@ -663,8 +662,7 @@ export async function handleDashboardInteractions(client, interaction) {
         const claimedLog = layoutMessage(
           `## 🟡 **Ticket Claimed**\n` +
             `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
-            `> **Claimed By:** <@${interaction.user.id}>\n` +
-            `> **Staff Role:** <@&${staffRoleId}>`
+            `> **Claimed By:** <@${interaction.user.id}>`
         );
         await logTicketMessage(client, conf, claimedLog);
       } catch (e) {
@@ -704,8 +702,7 @@ export async function handleDashboardInteractions(client, interaction) {
             `> **Ticket:** <#${channel.id}> (\`${channel.id}\`)\n` +
             `> **Opener:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
             `> **Type:** **${ticketTypeValue ? ticketTypeLabel(ticketTypeValue) : "Unknown"}**\n` +
-            `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
-            `> **Staff Role:** <@&${staffRoleId}>`
+            `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}`
         );
         await logTicketMessage(client, conf, closedLog);
       } catch (e) {
