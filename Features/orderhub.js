@@ -585,7 +585,6 @@ async function closeOrderNow(client, interaction, channel, oh) {
         `> **Type:** **${orderTypeLabel}**\n` +
         `> **Payment:** **${payTypeLabel}**\n` +
         `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
-        `> **Staff Role:** ${staffRoleId ? `<@&${staffRoleId}>` : "*Unknown*"}`
     );
     await logOrderMessage(client, oh, closedLog);
   } catch (e) {
@@ -783,7 +782,6 @@ export async function handleOrderHubInteractions(client, interaction) {
             `> **User:** <@${interaction.user.id}>\n` +
             `> **Type:** **${orderTypeLabel}**\n` +
             `> **Payment:** **${payTypeLabel}**\n` +
-            `> **Staff Role:** <@&${oh.staffRoleId}>`
         );
         await logOrderMessage(client, oh, openedLog);
       } catch (e) {
@@ -863,7 +861,6 @@ export async function handleOrderHubInteractions(client, interaction) {
           `## 🟡 **Order Claimed**\n` +
             `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
             `> **Claimed By:** <@${interaction.user.id}>\n` +
-            `> **Staff Role:** <@&${staffRoleId}>`
         );
         await logOrderMessage(client, oh, claimedLog);
       } catch (e) {
