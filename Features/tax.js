@@ -15,19 +15,25 @@ function parseAmount(input) {
 }
 
 function buildTaxEmbed(amount) {
-  const beforeTax = Math.round(amount * 0.7); // amount - 30%
-  const afterTax = Math.round(amount * 1.3);  // amount + 30%
+  // amount = how much you want to RECEIVE (payout)
+  const payoutWanted = amount;
+
+  // Roblox takes 30%, so you keep 70%
+  const priceToSet = Math.ceil(payoutWanted / 0.7);
+
+  // What you'll actually receive after rounding
+  const actualPayout = Math.floor(priceToSet * 0.7);
 
   return {
     embeds: [
       {
         description:
-          `**Amount:**\n` +
-          `> ${amount.toLocaleString("en-US")}\n\n` +
-          `**Robux Before Tax:**\n` +
-          `> ${beforeTax.toLocaleString("en-US")}\n\n` +
-          `**Robux After Tax:**\n` +
-          `> ${afterTax.toLocaleString("en-US")}\n`
+          `**Desired Payout (You Receive):**\n` +
+          `> ${payoutWanted.toLocaleString("en-US")}\n\n` +
+          `**Price To Set (So You Receive That):**\n` +
+          `> ${priceToSet.toLocaleString("en-US")}\n\n` +
+          `**Actual Payout At That Price:**\n` +
+          `> ${actualPayout.toLocaleString("en-US")}\n`
       }
     ],
     components: []
