@@ -433,17 +433,9 @@ function buildClosePromptPayload(openerId) {
           {
             type: 12,
             items: [
-              // OLD IMAGE (keep)
               {
                 media: {
                   url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
-                }
-              },
-
-              // NEW IMAGE (added into same card as the text)
-              {
-                media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
                 }
               }
             ]
@@ -538,15 +530,21 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
   return {
     allowed_mentions: { parse: ["users"] },
     embeds: [
+      // Embed 1: OLD banner (keep)
       {
         image: {
           url: "https://media.discordapp.net/attachments/1467051814733222043/1467567459841212557/NS_Reviews.png?ex=6980da34&is=697f88b4&hm=1c2f5588610dea6021657aa0bd8ab51cce89cbf5997863f11e9439f92ef53fc0&=&format=webp&quality=lossless&width=1872&height=560"
         }
       },
+
+      // Embed 2: TEXT + NEW banner (same embed)
       {
         description:
           `## New Order Review\n` +
           `> - Review left by <@${userId}>.`,
+        image: {
+          url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+        },
         fields: [
           { name: "Designer:", value: `<@${designerId}>`, inline: true },
           { name: "Rating:", value: stars || "—", inline: true },
