@@ -96,11 +96,14 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
     ephemeral: true,
     allowedMentions: { parse: [] },
     embeds: [
+      // Embed 1: OLD banner (image only)
       {
         image: {
           url: "https://media.discordapp.net/attachments/1467051814733222043/1467572324994908200/NS_Banners.png?ex=6980debc&is=697f8d3c&hm=1e3b2b6480319ac248e56c48d2ba88bcdc01f52c9265d00c715e5986cb593d0f&=&format=webp&quality=lossless&width=1872&height=560"
         }
       },
+
+      // Embed 2: TEXT + NEW banner (same embed)
       {
         description:
           "## **Payment Method**\n" +
@@ -109,7 +112,10 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
           "<:paypal:1467236926993072280> **PayPal**  **`-`**  Fast and secure online payments\n" +
           "<:card:1467165047624302664> **Credit/Debit Cards**  **`-`**  All major credit/debit cards accepted\n" +
           "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
-          `**Order Type:** **${orderTypeLabel}**`
+          `**Order Type:** **${orderTypeLabel}**`,
+        image: {
+          url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+        }
       }
     ],
     components: [
@@ -427,9 +433,17 @@ function buildClosePromptPayload(openerId) {
           {
             type: 12,
             items: [
+              // OLD IMAGE (keep)
               {
                 media: {
                   url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
+                }
+              },
+
+              // NEW IMAGE (added into same card as the text)
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
                 }
               }
             ]
