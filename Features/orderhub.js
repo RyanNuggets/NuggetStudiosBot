@@ -584,7 +584,7 @@ async function closeOrderNow(client, interaction, channel, oh) {
         `> **User:** ${openerId ? `<@${openerId}>` : "*Unknown*"}\n` +
         `> **Type:** **${orderTypeLabel}**\n` +
         `> **Payment:** **${payTypeLabel}**\n` +
-        `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}\n` +
+        `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "*Unclaimed*"}`
     );
     await logOrderMessage(client, oh, closedLog);
   } catch (e) {
@@ -781,7 +781,7 @@ export async function handleOrderHubInteractions(client, interaction) {
             `> **Order:** <#${created.id}> (\`${created.id}\`)\n` +
             `> **User:** <@${interaction.user.id}>\n` +
             `> **Type:** **${orderTypeLabel}**\n` +
-            `> **Payment:** **${payTypeLabel}**\n` +
+            `> **Payment:** **${payTypeLabel}**`
         );
         await logOrderMessage(client, oh, openedLog);
       } catch (e) {
@@ -860,7 +860,7 @@ export async function handleOrderHubInteractions(client, interaction) {
         const claimedLog = layoutMessage(
           `## 🟡 **Order Claimed**\n` +
             `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
-            `> **Claimed By:** <@${interaction.user.id}>\n` +
+            `> **Claimed By:** <@${interaction.user.id}>`
         );
         await logOrderMessage(client, oh, claimedLog);
       } catch (e) {
