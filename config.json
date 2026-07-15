@@ -2,51 +2,37 @@
   "guildId": "1015000518889853028",
 
   "dashboard": {
-    "dashboardChannelId": "1467408820606337148",
-    "ticketCategoryId": "1467409607268761727",
-    "supportRoleId": "1467409080921358417",
-    "managementRoleId": "1467409061459923004",
+    "dashboardChannelId": "1486640714128298135",
+    "ticketCategoryId": "1487614135058305154",
+    "supportRoleId": "1485624922972622859",
+    "managementRoleId": "1526722659407237180",
     "ticketChannelNameFormat": "ticket-{username}",
-    "ticketLogsChannelId": "1467409025581842434"
+    "ticketLogsChannelId": "1526910111229022418"
   },
 
   "orderhub": {
-    "orderHubChannelId": "1467408873563357205",
-    "staffRoleId": "1467409061459923004",
-    "categoryFiatId": "1467409745727193270",
-    "categoryRobuxId": "1467409766979731538",
+    "orderHubChannelId": "1485805596933361784",
+    "staffRoleId": "1485623742439620709",
+    "categoryFiatId": "1526910666362065047",
+    "categoryRobuxId": "1526910691317907456",
     "orderChannelNameFormat": "order-{username}",
-    "orderLogsChannelId": "1467409037548322927",
-    "reviewChannelId": "1467409006787166238"
+    "orderLogsChannelId": "1526910816413024416",
+    "reviewChannelId": "1485805640860307516"
   },
 
   "packages": {
-    "staffRoleId": "1467409087515070464",
-    "storageChannelId": "1467859186904731785",
-    "groupId": "863973320",
+    "staffRoleId": "1485624922972622859",
+    "storageChannelId": "1526911058407591996",
+    "groupId": "",
     "forumChannels": {
-      "uniforms": "1467859457726877850",
-      "graphics": "1467855193415745619",
-      "livery": "1467859474588110962"
-    }
-  },
-
-  "purchaseMonitor": {
-    "channelId": "1468123389569925244",
-    "proxyUrl": "http://180.183.157.159:8080"
-  },
-
-  "price": {
-    "proxyUrl": "http://dxhfdejy:v51znmjlvb1j@23.229.19.94:8689",
-    "payment": {
-      "assetId": 70853736927027,
-      "allowedRoleId": "1467409061459923004",
-      "logChannelId": "1468335592906424341"
+      "uniforms": "1526723478969913414",
+      "graphics": "1526738658894544938",
+      "livery": "1526723176132771961"
     }
   },
 
   "welcome": {
     "enabled": true,
-    "channelId": "1467409530303549655"
+    "channelId": "1485805832519159858"
   }
 }
