@@ -11,20 +11,10 @@ import registerTaxModule from "./Features/tax.js";
 // ✅ Package system
 import { registerPackageSystem } from "./Features/packageSystem.js";
 
-// ✅ Purchase monitor (CommonJS module)
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const purchaseMonitor = require("./Features/purchasemonitor.cjs");
-
-// ✅ Price module (CommonJS)
-const registerPriceModule = require("./Features/price.cjs");
-
-// ✅ Roblox/proxy deps (CommonJS libs)
-const noblox = require("noblox.js");
-const { HttpsProxyAgent } = require("https-proxy-agent");
-
 // --- NODE 18+ CRASH FIX (kept from your secondary test) ---
 if (typeof globalThis.File === "undefined") {
+  const { createRequire } = await import("module");
+  const require = createRequire(import.meta.url);
   const { Blob } = require("buffer");
   globalThis.File = class extends Blob {
     constructor(parts, filename, options = {}) {
@@ -51,7 +41,7 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ✅ Add this so purchasemonitor.js can call client.logs.custom / error
+// ✅ Add this so other modules can call client.logs.custom / error
 client.logs = {
   custom: (...args) => console.log("[LOG]", ...args),
   error: (...args) => console.error("[ERROR]", ...args)
@@ -67,17 +57,6 @@ try {
   console.log("✅ Package system loaded (waiting for ready to register commands)");
 } catch (err) {
   console.error("❌ Package system failed to load:", err);
-}
-
-// ✅ Setup Roblox proxy agent using config.price.proxyUrl
-const agent = new HttpsProxyAgent(config.price.proxyUrl);
-
-// ✅ Load /price module now (it will register the slash cmd on ready and listen for interactions)
-try {
-  registerPriceModule(client, agent, config.price.payment, config);
-  console.log("✅ Price module loaded (/price ready; will register on ready)");
-} catch (err) {
-  console.error("❌ Price module failed to load:", err);
 }
 
 // ---------------- READY ----------------
@@ -108,31 +87,6 @@ client.once("ready", async () => {
       console.error("❌ Failed to send order hub:", err);
     }
   }
-
-  // ✅ Roblox login (same idea as your secondary test)
-  try {
-    const cookie = process.env.ROBLOX_COOKIE;
-    if (!cookie) {
-      console.error("❌ Missing ROBLOX_COOKIE env var");
-      process.exit(1);
-    }
-
-    console.log(`[Roblox] 🌐 Logging in via: ${config.price.proxyUrl}`);
-    const user = await noblox.setCookie(cookie, { agent });
-    console.log(`[Roblox] ✅ Authenticated as ${user.UserName}`);
-  } catch (err) {
-    console.error("[Critical] Roblox Login Error:", err.message);
-    process.exit(1);
-  }
-
-  // ✅ Start purchase logging monitor
-  try {
-    // purchasemonitor.js exports { name, once, execute }
-    await purchaseMonitor.execute(client);
-    console.log("✅ Purchase logging module started successfully.");
-  } catch (error) {
-    console.error("❌ Error starting purchase logging module:", error);
-  }
 });
 
 // ---------------- INTERACTIONS ----------------
@@ -142,7 +96,6 @@ client.on("interactionCreate", async (interaction) => {
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
     // packageSystem handles its own interactions internally
-    // price.cjs handles /price internally
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
