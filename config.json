@@ -23,12 +23,21 @@
   "packages": {
     "staffRoleId": "1485624922972622859",
     "storageChannelId": "1526911058407591996",
-    "groupId": "863973320",
+    "publishForumChannelId": "REPLACE_WITH_YOUR_FORUM_CHANNEL_ID",
     "forumChannels": {
       "uniforms": "1526723478969913414",
       "graphics": "1526738658894544938",
       "livery": "1526723176132771961"
     }
+  },
+
+  "orderLogging": {
+    "payoutHandlerRoleId": "REPLACE_WITH_PAYOUT_HANDLER_ROLE_ID",
+    "modRoleId": "REPLACE_WITH_MOD_ROLE_ID",
+    "adminRoleId": "REPLACE_WITH_ADMIN_ROLE_ID",
+    "orderLogChannelId": "REPLACE_WITH_ORDER_LOG_CHANNEL_ID",
+    "robloxGroupId": "863973320",
+    "verificationLookbackHours": 336
   },
 
   "welcome": {
