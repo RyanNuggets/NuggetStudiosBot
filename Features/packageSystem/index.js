@@ -1,12 +1,12 @@
 // Features/packageSystem/index.js
 //
-// File-store-backed, Docksys-verified package system.
+// File-store-backed, Bloxlink-verified package system.
 //
 // Requires:
 //   - env DATA_DIR               (path to a Railway volume mount - see Features/Shared/jsonStore.js)
-//   - env DOCKSYS_API_KEY        (Roblox <-> Discord linking, replaces BLOXLINK_API_KEY)
+//   - env BLOXLINK_API_KEY       (Roblox <-> Discord linking via Bloxlink's Server API)
 //   - config.json -> packages.staffRoleId
-//   - config.json -> packages.publishForumChannelId  (a Forum channel)
+//   - config.json -> packages.forums.{clothing,liveries,graphics}  (three Forum channels)
 //
 import { Routes } from "discord-api-types/v10";
 import { MessageFlags } from "discord.js";
@@ -23,10 +23,14 @@ export function registerPackageSystem(client, config) {
 
   if (!guildId) throw new Error("Missing top-level `guildId` in config.json");
   if (!cfg) throw new Error("Missing `packages` block in config.json");
-  if (!cfg.publishForumChannelId) {
-    console.warn(
-      "⚠️ [packageSystem] `packages.publishForumChannelId` is not set - `/package send` will fail until it is."
-    );
+
+  const CATEGORY_KEYS = ["clothing", "liveries", "graphics"];
+  for (const key of CATEGORY_KEYS) {
+    if (!cfg.forums?.[key]) {
+      console.warn(
+        `⚠️ [packageSystem] \`packages.forums.${key}\` is not set - sending ${key} packages will fail until it is.`
+      );
+    }
   }
 
   const packageCommand = buildPackageCommand(cfg);
