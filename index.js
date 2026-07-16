@@ -8,7 +8,7 @@ import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
 
-// ✅ Package system (JSON file store + Docksys verified claims)
+// ✅ Package system (JSON file store + Bloxlink verified claims)
 import { registerPackageSystem } from "./Features/packageSystem/index.js";
 
 // --- NODE 18+ CRASH FIX (kept from your secondary test) ---
@@ -139,6 +139,6 @@ if (!process.env.TOKEN) {
 
 // Package system needs these:
 if (!process.env.CLIENT_ID) console.warn("⚠️ Missing CLIENT_ID env var (slash commands will not register).");
-if (!process.env.DOCKSYS_API_KEY) console.warn("⚠️ Missing DOCKSYS_API_KEY env var (Roblox account linking will fail).");
+if (!process.env.BLOXLINK_API_KEY) console.warn("⚠️ Missing BLOXLINK_API_KEY env var (Roblox account linking will fail).");
 
 client.login(process.env.TOKEN);

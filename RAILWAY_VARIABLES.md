@@ -19,7 +19,7 @@ Railway injects them directly into `process.env` at runtime):
 |---|---|---|
 | `TOKEN` | ✅ | Discord bot token used to log in. |
 | `CLIENT_ID` | ✅ | Discord application (client) ID, needed to register slash commands. |
-| `DOCKSYS_API_KEY` | ✅ | From https://docksys.xyz/account. Your server must have the Docksys bot added. Roblox <-> Discord account linking. |
+| `BLOXLINK_API_KEY` | ✅ | Server API Key from https://blox.link/dashboard (your server → Developers). Your server must have the Bloxlink bot added. Roblox <-> Discord account linking. |
 | `DATA_DIR` | recommended | Path to the mounted volume, e.g. `/data`. `packages.json` and package downloads are stored here. **Without this set, data is written to `./data` in the container and is lost on every redeploy.** |
 | `PACKAGE_FILES_DIR` | optional | Overrides where package download files are cached, if you want them somewhere other than `<DATA_DIR>/packages/downloads`. |
 

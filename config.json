@@ -13,16 +13,19 @@
   "orderhub": {
     "orderHubChannelId": "1485805596933361784",
     "staffRoleId": "1485623742439620709",
-    "categoryFiatId": "1526910666362065047",
-    "categoryRobuxId": "1526910691317907456",
-    "orderChannelNameFormat": "order-{username}",
+    "categoryLiveriesId": "REPLACE_WITH_YOUR_LIVERIES_CATEGORY_ID",
+    "categoryGraphicsId": "REPLACE_WITH_YOUR_GRAPHICS_CATEGORY_ID",
     "orderLogsChannelId": "1526910816413024416",
     "reviewChannelId": "1485805640860307516"
   },
 
   "packages": {
     "staffRoleId": "1485624922972622859",
-    "publishForumChannelId": "REPLACE_WITH_YOUR_FORUM_CHANNEL_ID"
+    "forums": {
+      "clothing": "REPLACE_WITH_YOUR_CLOTHING_FORUM_CHANNEL_ID",
+      "liveries": "REPLACE_WITH_YOUR_LIVERIES_FORUM_CHANNEL_ID",
+      "graphics": "REPLACE_WITH_YOUR_GRAPHICS_FORUM_CHANNEL_ID"
+    }
   },
 
   "welcome": {
