@@ -31,9 +31,15 @@ function packageEmbedFromDocument(pkg) {
 }
 
 // `cfg` = config.json's `packages` block, injected by the package system's index.js
+const CATEGORY_CHOICES = [
+  { name: "Clothing", value: "clothing" },
+  { name: "Liveries", value: "liveries" },
+  { name: "Graphics", value: "graphics" },
+];
+
 export default function buildPackageCommand(cfg) {
   const requiredRoleId = cfg.staffRoleId;
-  const forumChannelId = cfg.publishForumChannelId;
+  const forums = cfg.forums ?? {};
 
   return {
     data: new SlashCommandBuilder()
@@ -45,9 +51,16 @@ export default function buildPackageCommand(cfg) {
       .addSubcommand((sub) =>
         sub
           .setName("send")
-          .setDescription("Publish a saved package to the forum channel.")
+          .setDescription("Publish a saved package to the matching forum channel.")
           .addStringOption((option) =>
             option.setName("package").setDescription("Select the package to publish.").setRequired(true).setAutocomplete(true)
+          )
+          .addStringOption((option) =>
+            option
+              .setName("category")
+              .setDescription("Which forum to publish this package in.")
+              .setRequired(true)
+              .addChoices(...CATEGORY_CHOICES)
           )
           .addAttachmentOption((option) =>
             option.setName("image").setDescription("Preview image for the forum post.").setRequired(true)
@@ -120,6 +133,7 @@ export default function buildPackageCommand(cfg) {
 
       if (subcommand === "send") {
         const packageName = interaction.options.getString("package");
+        const category = interaction.options.getString("category");
         const image = interaction.options.getAttachment("image");
         const file = interaction.options.getAttachment("file");
 
@@ -139,11 +153,12 @@ export default function buildPackageCommand(cfg) {
           });
         }
 
+        const forumChannelId = forums[category];
         if (!forumChannelId) {
           const missingCfgEmbed = new EmbedBuilder()
             .setColor(PACKAGE_ATTENTION_COLOR)
             .setTitle("Missing Configuration")
-            .setDescription("`packages.publishForumChannelId` is not set in config.json.");
+            .setDescription(`\`packages.forums.${category}\` is not set in config.json.`);
           return interaction.editReply({ embeds: [missingCfgEmbed] });
         }
 
@@ -182,6 +197,7 @@ export default function buildPackageCommand(cfg) {
 
         packageData = await updatePackage(packageData.name, {
           messageId: sentMessage.id,
+          category,
           downloadFile: {
             url: file.url,
             name: storedDownloadFile.name,
@@ -200,10 +216,17 @@ export default function buildPackageCommand(cfg) {
           }
         }
 
+        const categoryLabel = CATEGORY_CHOICES.find((c) => c.value === category)?.name ?? category;
+
         const publishEmbed = packageEmbedFromDocument(packageData)
           .setTitle(`${packageData.name} Published`)
           .setDescription(
-            [`Posted in ${forum}.`, thread?.url ? `[Open the forum thread](${thread.url})` : null].filter(Boolean).join("\n\n")
+            [
+              `Posted in ${forum} (**${categoryLabel}**).`,
+              thread?.url ? `[Open the forum thread](${thread.url})` : null,
+            ]
+              .filter(Boolean)
+              .join("\n\n")
           )
           .setFooter({ text: "The claim button is live. Files will be delivered automatically." });
 
@@ -243,7 +266,10 @@ export default function buildPackageCommand(cfg) {
           const title = pkg.purchaselink ? `[${pkg.name}](${pkg.purchaselink})` : pkg.name;
           const packer = pkg.packerId ? `<@${pkg.packerId}>` : "N/A";
           const asset = pkg.assetId ? `\`${pkg.assetId}\`` : "N/A";
-          return `**${rank}. ${title}**\nPrice: ${pkg.price} | Packer: ${packer}\nAsset ID: ${asset}`;
+          const category = pkg.category
+            ? CATEGORY_CHOICES.find((c) => c.value === pkg.category)?.name ?? pkg.category
+            : "Not yet published";
+          return `**${rank}. ${title}**\nCategory: ${category} | Price: ${pkg.price} | Packer: ${packer}\nAsset ID: ${asset}`;
         });
 
         const listEmbed = new EmbedBuilder()
