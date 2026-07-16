@@ -158,10 +158,9 @@ const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467567357323903120/NS_Support.png?ex=6980da1c&is=697f889c&hm=e0367f23faed42e53cb9b297197dc612cebd243bfd8cfb468b25a3786fc1a73d&=&format=webp&quality=lossless&width=1872&height=560";
 
 // ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS) ----------------
-const STUDIO_REGULATIONS_EMBEDS = [
-  {
-    type: 17, // Container
-    components: [
+const STUDIO_REGULATIONS_LAYOUT = {
+  flags: 32768,
+  components: [
       {
         type: 12, // Media Gallery
         items: [
@@ -491,32 +490,55 @@ export async function sendDashboard(client) {
   console.log("✅ Dashboard sent");
 }
 
+// ---------------- RESET DASHBOARD DROPDOWN ----------------
+async function resetDashboardDropdown(interaction) {
+  const components = structuredClone(DASHBOARD_LAYOUT.components);
+
+  const selectRow = components[0].components.find(
+    (c) => c.type === 1 && c.components?.some((x) => x.type === 3)
+  );
+
+  const select = selectRow?.components[0];
+
+  if (select) {
+    delete select.default_values;
+  }
+
+  await interaction.message.edit({
+    flags: 32768,
+    components
+  });
+}
+
 // ---------------- INTERACTION HANDLER ----------------
 export async function handleDashboardInteractions(client, interaction) {
   const { dashboard: conf } = readConfig();
 
   // Dropdown interactions (Regulations / About)
-  if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
-    const selected = interaction.values?.[0];
-    console.log("[DASHBOARD] dropdown:", selected, "by", interaction.user?.id);
+if (interaction.isStringSelectMenu?.() && interaction.customId === IDS.mainSelect) {
+  const selected = interaction.values?.[0];
+  console.log("[DASHBOARD] dropdown:", selected, "by", interaction.user?.id);
 
-if (selected === "regulations") {
-  return interaction.reply({
-  flags: 32768 | 64,
-    components: STUDIO_REGULATIONS_EMBEDS,
-    allowedMentions: { parse: [] }
-  });
-}
+  await interaction.deferReply({ flags: 64 });
 
+  await resetDashboardDropdown(interaction).catch(console.error);
 
-if (selected === "about") {
-  return interaction.reply({
-    flags: 32768 | 64,
-    components: ABOUT_US_LAYOUT.components,
-    allowedMentions: { parse: [] }
-  });
-}
+  if (selected === "regulations") {
+    return interaction.editReply({
+      flags: 32768 | 64,
+      components: STUDIO_REGULATIONS_LAYOUT.components,
+      allowedMentions: { parse: [] }
+    });
   }
+
+  if (selected === "about") {
+    return interaction.editReply({
+      flags: 32768 | 64,
+      components: ABOUT_US_EMBEDS.components,
+      allowedMentions: { parse: [] }
+    });
+  }
+}
 
   // Support button -> ticket type selector (ephemeral)
   if (interaction.isButton?.() && interaction.customId === IDS.supportButton) {
