@@ -161,62 +161,67 @@ const BRAND_IMAGE =
 const STUDIO_REGULATIONS_LAYOUT = {
   flags: 32768,
   components: [
-      {
-        type: 12, // Media Gallery
-        items: [
-          {
-            media: {
-              url: "https://media.discordapp.net/attachments/1486296464350249040/1527313825274003546/Nugget_Studios_Banner_6.png?ex=6a5a3558&is=6a58e3d8&hm=283f3043038fbb9da5dd361c753a64f3ceca88f6ba56c4186775b676bf1b6f9e&=&format=webp&quality=lossless"
+    {
+      type: 17, // Container
+      components: [
+        {
+          type: 12, // Media Gallery
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1527313825274003546/Nugget_Studios_Banner_6.png?ex=6a5a3558&is=6a58e3d8&hm=283f3043038fbb9da5dd361c753a64f3ceca88f6ba56c4186775b676bf1b6f9e&=&format=webp&quality=lossless"
+              }
             }
-          }
-        ]
-      },
+          ]
+        },
 
-      {
-        type: 14 // Separator
-      },
+        {
+          type: 14 // Separator
+        },
 
-      {
-        type: 10, // Text Display
-        content:
-          "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
-          "1. **`Respect All Members`**\n" +
-          "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
-          "2. **`Spam & Flooding`**\n" +
-          "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
-          "3. **`Proper Channel Usage`**\n" +
-          "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
-          "4. **`Advertising & Promotion`**\n" +
-          "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
-          "5. **`Roblox & Discord Terms of Service`**\n" +
-          "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
-          "6. **`Leaking & Reselling`**\n" +
-          "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
-          "7. **`Staff Authority`**\n" +
-          "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
-          "8. **`Usernames & Avatars`**\n" +
-          "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
-          "9. **`NSFW & Inappropriate Content`**\n" +
-          "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
-          "10. **`Reporting Issues`**\n" +
-          "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
-      },
+        {
+          type: 10, // Text Display
+          content:
+            "These rules must be followed at all times. Violations may result in warnings, mutes, kicks, or bans.\n\n" +
+            "1. **`Respect All Members`**\n" +
+            "> Treat everyone with kindness and professionalism. Harassment, discrimination, or toxic behavior will not be tolerated.\n\n" +
+            "2. **`Spam & Flooding`**\n" +
+            "> Do not send repetitive messages, excessive emojis, links, or mentions. Keep all channels clean and readable.\n\n" +
+            "3. **`Proper Channel Usage`**\n" +
+            "> Stay on-topic and use channels for their intended purpose. For example, uniform requests must be posted in the appropriate request section.\n\n" +
+            "4. **`Advertising & Promotion`**\n" +
+            "> Advertising or promoting other servers, groups, or products without staff permission is strictly prohibited.\n\n" +
+            "5. **`Roblox & Discord Terms of Service`**\n" +
+            "> All members must comply with both Roblox and Discord ToS. Any violations may result in immediate moderation action.\n\n" +
+            "6. **`Leaking & Reselling`**\n" +
+            "> Leaking or reselling any content from **Nugget Studios** is strictly forbidden and will result in an immediate blacklist.\n\n" +
+            "7. **`Staff Authority`**\n" +
+            "> Staff decisions are final. If a staff member asks you to stop an action, you are expected to comply.\n\n" +
+            "8. **`Usernames & Avatars`**\n" +
+            "> Offensive or inappropriate usernames and avatars are not allowed within the server.\n\n" +
+            "9. **`NSFW & Inappropriate Content`**\n" +
+            "> This is a safe, all-ages server. NSFW or inappropriate content of any kind is not permitted.\n\n" +
+            "10. **`Reporting Issues`**\n" +
+            "> If you encounter rule-breaking or issues, report them privately to staff via DMs or support channels. Do not call out users publicly."
+        },
 
-      {
-        type: 14 // Separator
-      },
+        {
+          type: 14 // Separator
+        },
 
-      {
-        type: 12,
-        items: [
-          {
-            media: {
-              url: "https://media.discordapp.net/attachments/1486296464350249040/1487106449740791887/Dubai_Roleplay_Banner_Footer_1.png"
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1487106449740791887/Dubai_Roleplay_Banner_Footer_1.png"
+              }
             }
-          }
-        ]
-      }
-    ]
+          ]
+        }
+      ]
+    }
+  ]
 };
 
 // ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
