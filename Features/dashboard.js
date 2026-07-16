@@ -511,8 +511,8 @@ if (selected === "regulations") {
 
 if (selected === "about") {
   return interaction.reply({
-  flags: 32768 | 64,
-    components: ABOUT_US_EMBEDS,
+    flags: 32768 | 64,
+    components: ABOUT_US_LAYOUT.components,
     allowedMentions: { parse: [] }
   });
 }
