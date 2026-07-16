@@ -1,14 +1,14 @@
 // Features/packageSystem/Buttons/claimPackage.js
 import { MessageFlags } from "discord.js";
-import { getRobloxInfo } from "../../Shared/Docksys.js";
+import { getRobloxInfo } from "../../Shared/Bloxlink.js";
 import { findPackageByMessageId, updatePackage } from "../Models/packageStore.js";
 import { buildPublicPackageEmbed, PACKAGE_ATTENTION_COLOR } from "../Utils/Packages/packageUtils.js";
 import { storePackageFile, storedPackageFileExists, toAbsolutePath } from "../Utils/Packages/packageFileStore.js";
 
-// Docksys API key - was hardcoded in the original script; moved to env for safety.
-// Set DOCKSYS_API_KEY in your environment (get it from https://docksys.xyz/account).
-// Your server also needs the Docksys bot present for account linking to work.
-const DOCK_API = process.env.DOCKSYS_API_KEY;
+// Bloxlink Server API key - get it from https://blox.link/dashboard (your
+// server -> Developers -> generate a Server API Key).
+// Your server also needs the Bloxlink bot present for account linking to work.
+const BLOXLINK_API = process.env.BLOXLINK_API_KEY;
 
 function packageSummaryEmbed(packageData) {
   return buildPublicPackageEmbed({
@@ -41,9 +41,9 @@ export default {
   customID: "claimPackage",
 
   async execute(interaction, client) {
-    if (!DOCK_API) {
+    if (!BLOXLINK_API) {
       return interaction.reply({
-        content: "⚠️ Package claims are misconfigured: missing `DOCKSYS_API_KEY` environment variable.",
+        content: "⚠️ Package claims are misconfigured: missing `BLOXLINK_API_KEY` environment variable.",
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -90,10 +90,10 @@ export default {
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const robloxId = await getRobloxInfo(interaction.user.id, interaction, DOCK_API);
+    const robloxId = await getRobloxInfo(interaction.user.id, interaction, BLOXLINK_API);
     if (!robloxId) {
       return interaction.editReply({
-        content: "> Please link your Roblox account to your Discord account [**here**](https://api.docksys.xyz/v1/api/verify/discord) and then try again.",
+        content: "> Please link your Roblox account with **Bloxlink** (run `/verify` with the Bloxlink bot in this server) and then try again.",
       });
     }
 
