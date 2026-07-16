@@ -248,21 +248,21 @@ const ABOUT_US_LAYOUT = {
         },
 
         // About Us Content
-{
-  type: 10,
-  content:
-    "Welcome to **Nugget Studios** — a commission-based design studio focused on **clean, premium visuals** made for communities, creators, and game brands.\n\n" +
-    "1. **`What We Do`**\n" +
-    "> We specialize in custom **graphics, vehicle liveries, and brand identity**. From server banners, embed designs, and professional footers to detailed vehicle liveries and complete visual identities, we create designs that represent your brand.\n\n" +
-    "2. **`Our Standard`**\n" +
-    "> Every project is built with attention to detail, strong branding, clean layouts, and a professional finish that helps your community stand out.\n\n" +
-    "3. **`How It Works`**\n" +
-    "> Open a support ticket, provide your requirements, and our team will guide you through the process from initial concept to final delivery.\n\n" +
-    "4. **`Communication`**\n" +
-    "> We provide clear updates, organized revisions, and reliable communication throughout every project to ensure the final result meets your expectations.\n\n" +
-    "5. **`Goal`**\n" +
-    "> Help communities and brands establish a recognizable presence with professional designs, memorable visuals, and high-quality creative work."
-}
+        {
+          type: 10,
+          content:
+            "Welcome to **Nugget Studios** — a commission-based design studio focused on **clean, premium visuals** made for communities, creators, and game brands.\n\n" +
+            "1. **`What We Do`**\n" +
+            "> We specialize in custom **graphics, vehicle liveries, and brand identity**. From server banners, embed designs, and professional footers to detailed vehicle liveries and complete visual identities, we create designs that represent your brand.\n\n" +
+            "2. **`Our Standard`**\n" +
+            "> Every project is built with attention to detail, strong branding, clean layouts, and a professional finish that helps your community stand out.\n\n" +
+            "3. **`How It Works`**\n" +
+            "> Open a support ticket, provide your requirements, and our team will guide you through the process from initial concept to final delivery.\n\n" +
+            "4. **`Communication`**\n" +
+            "> We provide clear updates, organized revisions, and reliable communication throughout every project to ensure the final result meets your expectations.\n\n" +
+            "5. **`Goal`**\n" +
+            "> Help communities and brands establish a recognizable presence with professional designs, memorable visuals, and high-quality creative work."
+        },
 
         // Bottom Separator
         {
