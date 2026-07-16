@@ -217,7 +217,6 @@ const STUDIO_REGULATIONS_LAYOUT = {
         ]
       }
     ]
-  }
 ];
 
 // ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
