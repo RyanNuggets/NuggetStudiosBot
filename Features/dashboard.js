@@ -139,7 +139,7 @@ const BRAND_IMAGE =
   "https://media.discordapp.net/attachments/1467051814733222043/1467567357323903120/NS_Support.png?ex=6980da1c&is=697f889c&hm=e0367f23faed42e53cb9b297197dc612cebd243bfd8cfb468b25a3786fc1a73d&=&format=webp&quality=lossless&width=1872&height=560";
 
 // ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS) ----------------
-const STUDIO_REGULATIONS_COMPONENTS = [
+const STUDIO_REGULATIONS_EMBEDS = [
   {
     type: 17, // Container
     components: [
