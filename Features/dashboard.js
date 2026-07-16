@@ -207,17 +207,18 @@ const STUDIO_REGULATIONS_LAYOUT = {
       },
 
       {
-        type: 12, // Media Gallery
+        type: 12,
         items: [
           {
             media: {
-              url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5a1cf5&is=6a58cb75&hm=a64b8041cab8ba88e71d2300725c911b8dfccaa31b5426c8b8e2b82a0ae35fcc&=&format=webp&quality=lossless&width=1872&height=97"
+              url: "https://media.discordapp.net/attachments/1486296464350249040/1487106449740791887/Dubai_Roleplay_Banner_Footer_1.png"
             }
           }
         ]
       }
     ]
-];
+  }
+};
 
 // ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
 const ABOUT_US_EMBEDS = {
