@@ -440,7 +440,7 @@ export async function handleDashboardInteractions(client, interaction) {
 
 if (selected === "regulations") {
   return interaction.reply({
-    flags: 32768, // IsComponentsV2
+  flags: 32768 | 64,
     components: STUDIO_REGULATIONS_EMBEDS,
     allowedMentions: { parse: [] }
   });
