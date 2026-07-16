@@ -26,7 +26,7 @@ const DASHBOARD_LAYOUT = {
           items: [
             {
               media: {
-                url: "https://media.discordapp.net/attachments/1467051814733222043/1467567485846028403/NS_Dashboard.png?ex=6980da3a&is=697f88ba&hm=0913485abb0a3385f54ff67f374577c6b4dfa517b9051ebc38c94f2a3777669e&=&format=webp&quality=lossless&width=1872&height=560"
+                url: "https://media.discordapp.net/attachments/1342176150604222524/1526716130654163045/IMG_8962_1.png?ex=6a5a02f2&is=6a58b172&hm=828bde538c7b8bb0f954ceebbc14954fdb933dedb5138a2e97a0000c6c950ed7&=&format=webp&quality=lossless"
               }
             }
           ]
@@ -35,7 +35,7 @@ const DASHBOARD_LAYOUT = {
         {
           type: 10,
           content:
-            "**Nugget Studios** is a commission-based design studio specializing in **clean, high-impact graphics** for creators, communities, and game brands. We produce **banners, discord embeds, uniforms and refined promotional visuals** — built to impress and designed to last."
+            "**Nugget Studios** is a commission-based creative studio specializing in premium graphics, custom liveries, and digital design for creators, communities, and game brands. From banners and Discord assets to vehicle liveries and branding, we craft high-quality visuals built to impress and designed to last."
         },
         // Dropdown: Regulations + About Us
         {
@@ -67,6 +67,25 @@ const DASHBOARD_LAYOUT = {
               style: 5, // Link
               url: "https://nuggetstudios.xyz",
               label: "Website"
+            }
+          ]
+        },
+
+        // Large separator
+        {
+          type: 14,
+          divider: true,
+          spacing: 2
+        },
+
+        // Bottom image
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5a1cf5&is=6a58cb75&hm=a64b8041cab8ba88e71d2300725c911b8dfccaa31b5426c8b8e2b82a0ae35fcc&=&format=webp&quality=lossless&width=1872&height=97"
+              }
             }
           ]
         }
@@ -203,27 +222,70 @@ const STUDIO_REGULATIONS_EMBEDS = [
 ];
 
 // ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
-const ABOUT_US_EMBEDS = [
-  {
-    image: {
-      url: "https://media.discordapp.net/attachments/1467051814733222043/1467567417289871543/NS_About_Us.png?ex=6980da2a&is=697f88aa&hm=56345b328f6d6fe86997defe77f9c3c496f50289e65c153c9a11300b7599b376&=&format=webp&quality=lossless&width=1872&height=560"
+const ABOUT_US_LAYOUT = {
+  flags: 32768,
+  components: [
+    {
+      type: 17,
+      components: [
+        // Top Image
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1467051814733222043/1527318284574261339/Nugget_Studios_Banner_7.png?ex=6a5a397f&is=6a58e7ff&hm=aff22b60f356ee41fdc6a8c3c1e00a34631908123d2a1559e1c050537a2dfd31&=&format=webp&quality=lossless"
+              }
+            }
+          ]
+        },
+
+        // Separator below image
+        {
+          type: 14,
+          divider: true,
+          spacing: 2
+        },
+
+        // About Us Content
+{
+  type: 10,
+  content:
+    "Welcome to **Nugget Studios** — a commission-based design studio focused on **clean, premium visuals** made for communities, creators, and game brands.\n\n" +
+    "1. **`What We Do`**\n" +
+    "> We specialize in custom **graphics, vehicle liveries, and brand identity**. From server banners, embed designs, and professional footers to detailed vehicle liveries and complete visual identities, we create designs that represent your brand.\n\n" +
+    "2. **`Our Standard`**\n" +
+    "> Every project is built with attention to detail, strong branding, clean layouts, and a professional finish that helps your community stand out.\n\n" +
+    "3. **`How It Works`**\n" +
+    "> Open a support ticket, provide your requirements, and our team will guide you through the process from initial concept to final delivery.\n\n" +
+    "4. **`Communication`**\n" +
+    "> We provide clear updates, organized revisions, and reliable communication throughout every project to ensure the final result meets your expectations.\n\n" +
+    "5. **`Goal`**\n" +
+    "> Help communities and brands establish a recognizable presence with professional designs, memorable visuals, and high-quality creative work."
+}
+
+        // Bottom Separator
+        {
+          type: 14,
+          divider: true,
+          spacing: 2
+        },
+
+        // Bottom Bottom Image
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5a1cf5&is=6a58cb75&hm=a64b8041cab8ba88e71d2300725c911b8dfccaa31b5426c8b8e2b82a0ae35fcc&=&format=webp&quality=lossless&width=1872&height=97"
+              }
+            }
+          ]
+        }
+      ]
     }
-  },
-  {
-    description:
-      "Welcome to **Nugget Studios** — a commission-based design studio focused on **clean, premium visuals** made for communities, creators, and game brands.\n\n" +
-      "1. **`What We Do`**\n" +
-      "> We create high-impact graphics like banners, Discord assets, uniforms, and polished promotional designs.\n\n" +
-      "2. **`Our Standard`**\n" +
-      "> Every delivery is built with consistency in mind: clean spacing, strong readability, and a professional finish.\n\n" +
-      "3. **`How It Works`**\n" +
-      "> Open a support ticket, share what you need, and we’ll guide you through the process from concept to delivery.\n\n" +
-      "4. **`Communication`**\n" +
-      "> Clear updates, respectful timelines, and organized revisions — so you always know what’s happening.\n\n" +
-      "5. **`Goal`**\n" +
-      "> Make your server or brand look more official, more polished, and more memorable."
-  }
-];
+  ]
+};
 
 // ---------------- COMPONENT-BASED LAYOUT FOR LOGS/DMs ----------------
 function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
