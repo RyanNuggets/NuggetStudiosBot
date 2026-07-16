@@ -438,21 +438,21 @@ export async function handleDashboardInteractions(client, interaction) {
     const selected = interaction.values?.[0];
     console.log("[DASHBOARD] dropdown:", selected, "by", interaction.user?.id);
 
-    if (selected === "regulations") {
-      return interaction.reply({
-        ephemeral: true,
-        embeds: STUDIO_REGULATIONS_EMBEDS,
-        allowedMentions: { parse: [] }
-      });
-    }
+if (selected === "regulations") {
+  return interaction.reply({
+    flags: 32768, // IsComponentsV2
+    components: STUDIO_REGULATIONS_EMBEDS,
+    allowedMentions: { parse: [] }
+  });
+}
 
-    if (selected === "about") {
-      return interaction.reply({
-        ephemeral: true,
-        embeds: ABOUT_US_EMBEDS,
-        allowedMentions: { parse: [] }
-      });
-    }
+if (selected === "about") {
+  return interaction.reply({
+    ephemeral: true,
+    embeds: ABOUT_US_EMBEDS,
+    allowedMentions: { parse: [] }
+  });
+}
   }
 
   // Support button -> ticket type selector (ephemeral)
