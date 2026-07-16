@@ -155,7 +155,7 @@ const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : 
 
 // ---------------- BRAND IMAGE ----------------
 const BRAND_IMAGE =
-  "https://media.discordapp.net/attachments/1467051814733222043/1467567357323903120/NS_Support.png?ex=6980da1c&is=697f889c&hm=e0367f23faed42e53cb9b297197dc612cebd243bfd8cfb468b25a3786fc1a73d&=&format=webp&quality=lossless&width=1872&height=560";
+  "https://media.discordapp.net/attachments/1486296464350249040/1527325669439045702/Nugget_Studios_Banner_8.png?ex=6a5a405f&is=6a58eedf&hm=23f9e143e4c0e7cd362d5be6ad5d48da9b1b847e3ad4ee3debe1538883e0af43&=&format=webp&quality=lossless";
 
 // ---------------- STUDIO REGULATIONS (EPHEMERAL EMBEDS) ----------------
 const STUDIO_REGULATIONS_LAYOUT = {
@@ -214,7 +214,7 @@ const STUDIO_REGULATIONS_LAYOUT = {
           items: [
             {
               media: {
-                url: "https://media.discordapp.net/attachments/1486296464350249040/1487106449740791887/Dubai_Roleplay_Banner_Footer_1.png"
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5a1cf5&is=6a58cb75&hm=a64b8041cab8ba88e71d2300725c911b8dfccaa31b5426c8b8e2b82a0ae35fcc&=&format=webp&quality=lossless&width=1872&height=97"
               }
             }
           ]
