@@ -18,12 +18,11 @@ const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 // ---------------- IDS ----------------
 const IDS = {
   // public order hub buttons
-  orderStandardBtn: "orderhub_standard",
-  orderPackageBtn: "orderhub_package",
+  orderLiveriesBtn: "orderhub_liveries",
+  orderGraphicsBtn: "orderhub_graphics",
 
   // payment buttons (encoded with order type)
-  payPaypal: "orderhub_paypal",
-  payCard: "orderhub_card",
+  payUsd: "orderhub_usd",
   payRobux: "orderhub_robux",
 
   // order ticket controls (inside ticket)
@@ -71,17 +70,17 @@ const ORDER_HUB_LAYOUT = {
           type: 10,
           content:
             "## **Order Here**\n" +
-            "Looking for a **custom, high-quality banner or graphic**? Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
+            "Looking for a **custom livery or graphic**? Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
             "<:shoppingcart:1467165075025432618> **Select an Order Type:**\n" +
-            "<:dot:1467233440117297203> **Standard Order**  **`-`**  Order a single custom banner or graphic\n" +
-            "<:dot:1467233440117297203> **Package Order**  **`-`**  Order multiple designs in one bundle"
+            "<:dot:1467233440117297203> **Liveries**  **`-`**  Order a custom vehicle livery\n" +
+            "<:dot:1467233440117297203> **Graphics**  **`-`**  Order a custom banner or graphic"
         },
         { type: 14, spacing: 2 },
         {
           type: 1,
           components: [
-            { type: 2, style: 2, label: "Standard Order", custom_id: IDS.orderStandardBtn },
-            { type: 2, style: 2, label: "Package Order", custom_id: IDS.orderPackageBtn }
+            { type: 2, style: 2, label: "Liveries", custom_id: IDS.orderLiveriesBtn },
+            { type: 2, style: 2, label: "Graphics", custom_id: IDS.orderGraphicsBtn }
           ]
         }
       ]
@@ -109,8 +108,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
           "## **Payment Method**\n" +
           "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
           "**`-`** **Available Payment Options:**\n" +
-          "<:paypal:1467236926993072280> **PayPal**  **`-`**  Fast and secure online payments\n" +
-          "<:card:1467165047624302664> **Credit/Debit Cards**  **`-`**  All major credit/debit cards accepted\n" +
+          "<:card:1467165047624302664> **USD**  **`-`**  PayPal / Credit/Debit Card\n" +
           "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
           `**Order Type:** **${orderTypeLabel}**`,
         image: {
@@ -122,8 +120,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
       {
         type: 1,
         components: [
-          { type: 2, style: 2, label: "PayPal", custom_id: `${IDS.payPaypal}:${encodedOrderType}` },
-          { type: 2, style: 2, label: "Credit/Debit Card", custom_id: `${IDS.payCard}:${encodedOrderType}` },
+          { type: 2, style: 2, label: "USD", custom_id: `${IDS.payUsd}:${encodedOrderType}` },
           { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
         ]
       }
@@ -407,7 +404,7 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
 async function findExistingOrderChannel(guild, oh, userId) {
   await guild.channels.fetch().catch(() => {});
   const tag = orderUserTag(userId);
-  const cats = [oh?.categoryFiatId, oh?.categoryRobuxId].filter(Boolean);
+  const cats = [oh?.categoryLiveriesId, oh?.categoryGraphicsId].filter(Boolean);
 
   return (
     guild.channels.cache.find(
@@ -566,15 +563,8 @@ async function closeOrderNow(client, interaction, channel, oh) {
 
   const staffRoleId = getStaffRoleFromTopic(topic) || oh?.staffRoleId;
 
-  const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
-  const payTypeLabel =
-    payType === "paypal"
-      ? "PayPal"
-      : payType === "card"
-      ? "Credit/Debit Card"
-      : payType === "robux"
-      ? "Robux"
-      : "Unknown";
+  const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
+  const payTypeLabel = payType === "usd" ? "USD" : payType === "robux" ? "Robux" : "Unknown";
 
   // Log: closed
   try {
@@ -676,23 +666,22 @@ export async function handleOrderHubInteractions(client, interaction) {
     const channel = interaction.channel;
 
     // ORDER TYPE -> PAYMENT PROMPT
-    if (interaction.customId === IDS.orderStandardBtn || interaction.customId === IDS.orderPackageBtn) {
+    if (interaction.customId === IDS.orderLiveriesBtn || interaction.customId === IDS.orderGraphicsBtn) {
       // ONE open order total
       const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
       if (existing) {
         return interaction.reply({ content: `You already have an open order: <#${existing.id}>`, ephemeral: true });
       }
 
-      if (interaction.customId === IDS.orderStandardBtn) {
-        return interaction.reply(buildPaymentPrompt("Standard Order", "standard"));
+      if (interaction.customId === IDS.orderLiveriesBtn) {
+        return interaction.reply(buildPaymentPrompt("Liveries", "liveries"));
       }
-      return interaction.reply(buildPaymentPrompt("Package Order", "package"));
+      return interaction.reply(buildPaymentPrompt("Graphics", "graphics"));
     }
 
     // PAYMENT -> CREATE ORDER TICKET
     if (
-      interaction.customId.startsWith(IDS.payPaypal + ":") ||
-      interaction.customId.startsWith(IDS.payCard + ":") ||
+      interaction.customId.startsWith(IDS.payUsd + ":") ||
       interaction.customId.startsWith(IDS.payRobux + ":")
     ) {
       // ONE open order total
@@ -702,7 +691,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       }
 
       const [base, orderType] = interaction.customId.split(":");
-      const payType = base === IDS.payPaypal ? "paypal" : base === IDS.payCard ? "card" : "robux";
+      const payType = base === IDS.payUsd ? "usd" : "robux";
 
       const guild = interaction.guild;
       if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
@@ -710,18 +699,18 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (!oh?.staffRoleId) {
         return interaction.reply({ content: "Missing orderhub.staffRoleId in config.json", ephemeral: true });
       }
-      if (!oh?.categoryFiatId || !oh?.categoryRobuxId) {
+      if (!oh?.categoryLiveriesId || !oh?.categoryGraphicsId) {
         return interaction.reply({
-          content: "Missing orderhub.categoryFiatId / orderhub.categoryRobuxId in config.json",
+          content: "Missing orderhub.categoryLiveriesId / orderhub.categoryGraphicsId in config.json",
           ephemeral: true
         });
       }
 
-      const parentId = payType === "robux" ? oh.categoryRobuxId : oh.categoryFiatId;
+      // Category is determined by order type (Liveries/Graphics); the
+      // channel name is differentiated by payment method (usd/robux).
+      const parentId = orderType === "graphics" ? oh.categoryGraphicsId : oh.categoryLiveriesId;
 
-      const channelName = safeChannelName(
-        (oh.orderChannelNameFormat ?? "order-{username}").replace("{username}", interaction.user.username)
-      );
+      const channelName = safeChannelName(`${payType}-${interaction.user.username}`);
 
       const topic =
         appendTopicTag(
@@ -760,8 +749,8 @@ export async function handleOrderHubInteractions(client, interaction) {
         ]
       });
 
-      const orderTypeLabel = orderType === "package" ? "Package Order" : "Standard Order";
-      const payTypeLabel = payType === "paypal" ? "PayPal" : payType === "card" ? "Credit/Debit Card" : "Robux";
+      const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
+      const payTypeLabel = payType === "usd" ? "USD" : "Robux";
 
       await postRaw(
         client,
