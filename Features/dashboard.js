@@ -222,7 +222,7 @@ const STUDIO_REGULATIONS_EMBEDS = [
 ];
 
 // ---------------- ABOUT US (EPHEMERAL EMBEDS) ----------------
-const ABOUT_US_LAYOUT = {
+const ABOUT_US_EMBEDS = {
   flags: 32768,
   components: [
     {
@@ -508,10 +508,11 @@ if (selected === "regulations") {
   });
 }
 
+
 if (selected === "about") {
   return interaction.reply({
-    ephemeral: true,
-    embeds: ABOUT_US_EMBEDS,
+  flags: 32768 | 64,
+    components: ABOUT_US_EMBEDS,
     allowedMentions: { parse: [] }
   });
 }
