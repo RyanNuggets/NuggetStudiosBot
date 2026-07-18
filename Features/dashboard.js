@@ -35,7 +35,7 @@ const DASHBOARD_LAYOUT = {
         {
           type: 10,
           content:
-            "**Nugget Studios** is a commission-based creative studio specializing in premium graphics, custom liveries, and digital design for creators, communities, and game brands. From banners and Discord assets to vehicle liveries and branding, we craft high-quality visuals built to impress and designed to last."
+            "**<:nsgreen:1527102715371716688> Nugget Studios** is a commission-based creative studio specializing in premium graphics, custom liveries, and digital design for creators, communities, and game brands. From banners and Discord assets to vehicle liveries and branding, we craft high-quality visuals built to impress and designed to last."
         },
         // Dropdown: Regulations + About Us
         {
