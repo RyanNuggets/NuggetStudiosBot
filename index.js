@@ -9,7 +9,7 @@ import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js
 import registerTaxModule from "./Features/tax.js";
 
 // ✅ /servicechange slash command
-import { data as serviceChangeData, execute as serviceChangeExecute } from "./Commands/servicechange.js";
+import { data as serviceChangeData, execute as serviceChangeExecute } from "./Features/servicechange.js";
 
 // ✅ Package system (JSON file store + Bloxlink verified claims)
 import { registerPackageSystem } from "./Features/packageSystem/index.js";
