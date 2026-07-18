@@ -99,7 +99,7 @@ const REVIEW_STATE = new Map();
 // Star rating — using a plain unicode star. The old custom emoji ID was
 // invalid/inaccessible to the bot, which caused Discord to reject the rating
 // select menu entirely (that's why picking a designer said "Something went wrong").
-const STAR_EMOJI = "⭐";
+const STAR_EMOJI = "<:star:1528172711581319260>";
 
 // ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
