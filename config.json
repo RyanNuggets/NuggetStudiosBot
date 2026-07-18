@@ -16,7 +16,9 @@
     "categoryLiveriesId": "1526910691317907456",
     "categoryGraphicsId": "1526910666362065047",
     "orderLogsChannelId": "1526910816413024416",
-    "reviewChannelId": "1485805640860307516"
+    "reviewChannelId": "1485805640860307516",
+    "serviceChangeRoleId": "1485623742439620709",
+    "serviceStatus": { "liveries": "open", "graphics": "open" }
   },
 
   "packages": {
