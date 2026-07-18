@@ -71,7 +71,8 @@ const ORDER_HUB_LAYOUT = {
           type: 10,
           content:
             "## **Order Here**\n" +
-            "Bring your vision to life with Nugget Studios. We specialize in custom liveries, graphics, and brand identity, delivering high-quality, affordable designs with precision, consistency, and fast turnaround times. Every order is carefully managed by our trusted creative team from concept to completion. Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
+            "Bring your vision to life with **Nugget Studios**. We specialize in **custom liveries, graphics, and brand identity**, delivering ***high-quality, affordable*** designs with **precision, consistency, and fast turnaround times**. Every order is carefully managed by our **trusted creative team** from **concept to completion**.\n\n" +
+            "**Start an order** and our team will review your request shortly. **Choose one of the options below to continue.**\n\n" +
             "-# <:shield:1528162879524704407> All orders are subject to our Terms of Service: https://nuggetstudios.xyz/tos.\n\n" +
             "<:shoppingcart:1528163263861231847> **Select an Order Type:**\n" +
             "<:dot:1528163225806307519> **Liveries**  **`-`**  Order a custom vehicle livery\n" +
