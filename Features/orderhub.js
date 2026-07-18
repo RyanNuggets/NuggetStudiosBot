@@ -13,7 +13,8 @@ import {
 import fs from "fs";
 
 // ---------------- CONFIG ----------------
-const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
+export const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
+export const writeConfig = (conf) => fs.writeFileSync("./config.json", JSON.stringify(conf, null, 2));
 
 // ---------------- IDS ----------------
 const IDS = {
@@ -94,34 +95,57 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
   return {
     ephemeral: true,
     allowedMentions: { parse: [] },
-    embeds: [
-      // Embed 1: OLD banner (image only)
-      {
-        image: {
-          url: "https://media.discordapp.net/attachments/1467051814733222043/1467572324994908200/NS_Banners.png?ex=6980debc&is=697f8d3c&hm=1e3b2b6480319ac248e56c48d2ba88bcdc01f52c9265d00c715e5986cb593d0f&=&format=webp&quality=lossless&width=1872&height=560"
-        }
-      },
-
-      // Embed 2: TEXT + NEW banner (same embed)
-      {
-        description:
-          "## **Payment Method**\n" +
-          "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
-          "**`-`** **Available Payment Options:**\n" +
-          "<:card:1467165047624302664> **USD**  **`-`**  PayPal / Credit/Debit Card\n" +
-          "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
-          `**Order Type:** **${orderTypeLabel}**`,
-        image: {
-          url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
-        }
-      }
-    ],
+    flags: 32768,
     components: [
       {
-        type: 1,
+        type: 17,
         components: [
-          { type: 2, style: 2, label: "USD", custom_id: `${IDS.payUsd}:${encodedOrderType}` },
-          { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
+          // ---- Section 1 (was Embed 1: banner only) ----
+          // No text for this section — just a bottom image slot. Paste your image link below.
+          { type: 14, spacing: 2 },
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467572324994908200/NS_Banners.png?ex=6980debc&is=697f8d3c&hm=1e3b2b6480319ac248e56c48d2ba88bcdc01f52c9265d00c715e5986cb593d0f&=&format=webp&quality=lossless&width=1872&height=560"
+                }
+              }
+            ]
+          },
+          { type: 14, spacing: 2 },
+
+          // ---- Section 2 (was Embed 2: text + banner) ----
+          {
+            type: 10,
+            content:
+              "## **Payment Method**\n" +
+              "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
+              "**`-`** **Available Payment Options:**\n" +
+              "<:card:1467165047624302664> **USD**  **`-`**  PayPal / Credit/Debit Card\n" +
+              "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
+              `**Order Type:** **${orderTypeLabel}**`
+          },
+          { type: 14, spacing: 2 },
+          // Bottom image slot for this section — paste your image link below.
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+                }
+              }
+            ]
+          },
+          { type: 14, spacing: 2 },
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 2, label: "USD", custom_id: `${IDS.payUsd}:${encodedOrderType}` },
+              { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
+            ]
+          }
         ]
       }
     ]
@@ -525,32 +549,53 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
   const clipped = safeMsg.length > 900 ? safeMsg.slice(0, 900) + "…" : safeMsg;
 
   return {
+    flags: 32768,
     allowed_mentions: { parse: ["users"] },
-    embeds: [
-      // Embed 1: OLD banner (keep)
+    components: [
       {
-        image: {
-          url: "https://media.discordapp.net/attachments/1467051814733222043/1467567459841212557/NS_Reviews.png?ex=6980da34&is=697f88b4&hm=1c2f5588610dea6021657aa0bd8ab51cce89cbf5997863f11e9439f92ef53fc0&=&format=webp&quality=lossless&width=1872&height=560"
-        }
-      },
+        type: 17,
+        components: [
+          // ---- Section 1 (was Embed 1: banner only) ----
+          // No text for this section — just a bottom image slot. Paste your image link below.
+          { type: 14, spacing: 2 },
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467567459841212557/NS_Reviews.png?ex=6980da34&is=697f88b4&hm=1c2f5588610dea6021657aa0bd8ab51cce89cbf5997863f11e9439f92ef53fc0&=&format=webp&quality=lossless&width=1872&height=560"
+                }
+              }
+            ]
+          },
+          { type: 14, spacing: 2 },
 
-      // Embed 2: TEXT + NEW banner (same embed)
-      {
-        description:
-          `## New Order Review\n` +
-          `> - Review left by <@${userId}>.`,
-        image: {
-          url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
-        },
-        fields: [
-          { name: "Designer:", value: `<@${designerId}>`, inline: true },
-          { name: "Rating:", value: stars || "—", inline: true },
-          { name: "Product:", value: `**${product}**`, inline: true },
-          { name: "Feedback:", value: clipped, inline: false }
+          // ---- Section 2 (was Embed 2: text + fields + banner) ----
+          {
+            type: 10,
+            content:
+              `## New Order Review\n` +
+              `> Review left by <@${userId}>.\n\n` +
+              `**Designer:** <@${designerId}>\n` +
+              `**Rating:** ${stars || "—"}\n` +
+              `**Product:** **${product}**\n` +
+              `**Feedback:** ${clipped}`
+          },
+          { type: 14, spacing: 2 },
+          // Bottom image slot for this section — paste your image link below.
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+                }
+              }
+            ]
+          }
         ]
       }
-    ],
-    components: []
+    ]
   };
 }
 
@@ -667,6 +712,18 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     // ORDER TYPE -> PAYMENT PROMPT
     if (interaction.customId === IDS.orderLiveriesBtn || interaction.customId === IDS.orderGraphicsBtn) {
+      // SERVICE OPEN/CLOSE GATE (set via /servicechange)
+      const serviceKey = interaction.customId === IDS.orderLiveriesBtn ? "liveries" : "graphics";
+      const serviceLabel = serviceKey === "liveries" ? "Liveries" : "Graphics";
+      const serviceStatus = oh?.serviceStatus?.[serviceKey] ?? "open";
+
+      if (serviceStatus === "closed") {
+        return interaction.reply({
+          content: `🔒 **${serviceLabel} orders are currently closed.** Please wait until it's announced open again.`,
+          ephemeral: true
+        });
+      }
+
       // ONE open order total
       const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
       if (existing) {
