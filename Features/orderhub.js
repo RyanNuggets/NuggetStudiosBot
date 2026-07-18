@@ -11,10 +11,61 @@ import {
   UserSelectMenuBuilder
 } from "discord.js";
 import fs from "fs";
+import path from "path";
 
 // ---------------- CONFIG ----------------
 export const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 export const writeConfig = (conf) => fs.writeFileSync("./config.json", JSON.stringify(conf, null, 2));
+
+// ---------------- ORDER METADATA STORE ----------------
+// Order metadata (opener, order type, payment type, staff role, claimer) used
+// to be crammed into the channel's Topic/Description field — which meant
+// anyone opening channel settings would see raw "ns_order_user:..." tags.
+// It's now kept here instead, on disk, keyed by channel ID, and the channel
+// topic is left alone.
+const ORDER_STORE_DIR = process.env.DATA_DIR || "./data";
+const ORDER_STORE_FILE = path.join(ORDER_STORE_DIR, "orderhub_orders.json");
+
+function loadOrderStore() {
+  try {
+    return JSON.parse(fs.readFileSync(ORDER_STORE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveOrderStore(store) {
+  fs.mkdirSync(ORDER_STORE_DIR, { recursive: true });
+  fs.writeFileSync(ORDER_STORE_FILE, JSON.stringify(store, null, 2));
+}
+
+function getOrderRecord(channelId) {
+  const store = loadOrderStore();
+  return store[channelId] ?? null;
+}
+
+function setOrderRecord(channelId, patch) {
+  const store = loadOrderStore();
+  store[channelId] = { ...(store[channelId] ?? {}), ...patch };
+  saveOrderStore(store);
+  return store[channelId];
+}
+
+function deleteOrderRecord(channelId) {
+  const store = loadOrderStore();
+  if (store[channelId]) {
+    delete store[channelId];
+    saveOrderStore(store);
+  }
+}
+
+function findOpenOrderChannelIdForUser(userId) {
+  const store = loadOrderStore();
+  for (const [channelId, rec] of Object.entries(store)) {
+    if (rec?.userId === userId) return channelId;
+  }
+  return null;
+}
 
 // ---------------- IDS ----------------
 const IDS = {
@@ -45,9 +96,10 @@ const IDS = {
 // review state: key = `${channelId}:${userId}`
 const REVIEW_STATE = new Map();
 
-// Your custom emoji (NOTE: requires Use External Emojis if not from this server)
-const STAR_EMOJI = "<:star:1467246556649623694>";
-const STAR_EMOJI_OBJ = { id: "1467246556649623694", name: "star" };
+// Star rating — using a plain unicode star. The old custom emoji ID was
+// invalid/inaccessible to the bot, which caused Discord to reject the rating
+// select menu entirely (that's why picking a designer said "Something went wrong").
+const STAR_EMOJI = "⭐";
 
 // ---------------- ORDER HUB (PUBLIC MESSAGE) ----------------
 const ORDER_HUB_LAYOUT = {
@@ -85,6 +137,18 @@ const ORDER_HUB_LAYOUT = {
             { type: 2, style: 2, label: "Liveries", custom_id: IDS.orderLiveriesBtn },
             { type: 2, style: 2, label: "Graphics", custom_id: IDS.orderGraphicsBtn }
           ]
+        },
+        { type: 14, spacing: 2 },
+        // Bottom image slot — paste your image link below.
+        {
+          type: 12,
+          items: [
+            {
+              media: {
+                url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
+              }
+            }
+          ]
         }
       ]
     }
@@ -103,8 +167,6 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
         type: 17,
         components: [
           // ---- Section 1 (was Embed 1: banner only) ----
-          // No text for this section — just a bottom image slot. Paste your image link below.
-          { type: 14, spacing: 2 },
           {
             type: 12,
             items: [
@@ -117,18 +179,28 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
           },
           { type: 14, spacing: 2 },
 
-          // ---- Section 2 (was Embed 2: text + banner) ----
+          // ---- Section 2: text -> buttons -> order type -> large separator -> image ----
           {
             type: 10,
             content:
               "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
               "<:wallet:1528165051859468348> **Available Payment Options:**\n" +
               "<:creditcard:1528164289192525996> **USD** <:dot:1528163225806307519> PayPal / Credit/Debit Card\n" +
-              "<:robux:1528164258251018281> Robux <:dot:1528163225806307519> Robux payments are accepted for eligible orders\n\n" +
-              `**Order Type:** **${orderTypeLabel}**`
+              "<:robux:1528164258251018281> Robux <:dot:1528163225806307519> Robux payments are accepted for eligible orders"
+          },
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 2, label: "USD", custom_id: `${IDS.payUsd}:${encodedOrderType}` },
+              { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
+            ]
+          },
+          {
+            type: 10,
+            content: `**Order Type:** **${orderTypeLabel}**`
           },
           { type: 14, spacing: 2 },
-          // Bottom image slot for this section — paste your image link below.
+          // Bottom image slot — paste your image link below.
           {
             type: 12,
             items: [
@@ -137,14 +209,6 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
                   url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
                 }
               }
-            ]
-          },
-          { type: 14, spacing: 2 },
-          {
-            type: 1,
-            components: [
-              { type: 2, style: 2, label: "USD", custom_id: `${IDS.payUsd}:${encodedOrderType}` },
-              { type: 2, style: 2, label: "Robux", custom_id: `${IDS.payRobux}:${encodedOrderType}` }
             ]
           }
         ]
@@ -167,36 +231,6 @@ const hasRole = (interaction, roleId) => {
   const roles = member.roles?.cache ?? member.roles;
   return roles?.has ? roles.has(roleId) : Array.isArray(roles) ? roles.includes(roleId) : false;
 };
-
-// tags (ONE open order per user, regardless of options)
-const orderUserTag = (userId) => `ns_order_user:${userId}`;
-const orderMetaTag = (orderType, payType) => `ns_order_meta:${orderType}:${payType}`;
-const staffRoleTopicTag = (roleId) => `ns_staffrole:${roleId}`;
-const claimedTopicTag = (staffId) => `ns_claimed:${staffId}`;
-
-const hasClaimTag = (topic = "") => topic.includes("ns_claimed:");
-const getClaimedBy = (topic = "") => {
-  const m = topic.match(/ns_claimed:(\d{5,})/);
-  return m ? m[1] : null;
-};
-
-const getStaffRoleFromTopic = (topic = "") => {
-  const m = topic.match(/ns_staffrole:(\d{5,})/);
-  return m ? m[1] : null;
-};
-
-const getOrderUserFromTopic = (topic = "") => {
-  const m = topic.match(/ns_order_user:(\d{5,})/);
-  return m ? m[1] : null;
-};
-
-const getOrderMetaFromTopic = (topic = "") => {
-  const m = topic.match(/ns_order_meta:([a-z0-9_-]+):([a-z0-9_-]+)/i);
-  if (!m) return { orderType: null, payType: null };
-  return { orderType: m[1], payType: m[2] };
-};
-
-const appendTopicTag = (topic = "", tag = "") => (topic ? `${topic} | ${tag}` : tag).slice(0, 1024);
 
 // ---------------- COOLDOWN (ANTI SPAM CLICK) ----------------
 const clickCooldown = new Map(); // userId -> timestamp
@@ -237,7 +271,13 @@ async function logOrderMessage(client, ohConf, body) {
 }
 
 // ---------------- COMPONENT-BASED LAYOUT HELPERS (logs/DM) ----------------
-function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
+const LOG_IMAGE_URL =
+  "https://media.discordapp.net/attachments/1467051814733222043/1528172410921291957/Nugget_Studios_Banner_16.png?ex=6a5d54f6&is=6a5c0376&hm=87d6f1c8e94706caf3ee09546e411cd13fa5cdc308069d01938aaf5c4bbb868f&=&format=webp&quality=lossless";
+
+// Separate image for DMs — paste your own link here to differentiate DM logs from channel logs.
+const DM_IMAGE_URL = "https://media.discordapp.net/attachments/1467051814733222043/1528165504936575106/Nugget_Studios_Banner_11.png?ex=6a5d4e88&is=6a5bfd08&hm=418a2a4686331cd354bf19d03662e57296671e2439dff63953c095440e149de0&=&format=webp&quality=lossless";
+
+function layoutMessage(contentMarkdown, { pingLine = null, imageUrl = LOG_IMAGE_URL } = {}) {
   const components = [];
   if (pingLine) components.push({ type: 10, content: pingLine });
 
@@ -249,7 +289,7 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
         items: [
           {
             media: {
-              url: "https://media.discordapp.net/attachments/1467051814733222043/1528165504936575106/Nugget_Studios_Banner_11.png?ex=6a5d4e88&is=6a5bfd08&hm=418a2a4686331cd354bf19d03662e57296671e2439dff63953c095440e149de0&=&format=webp&quality=lossless"
+              url: imageUrl
             }
           }
         ]
@@ -418,6 +458,18 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
                 ]
               }
             ]
+          },
+          { type: 14, spacing: 2 },
+          // Bottom image slot — paste your image link below.
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
+                }
+              }
+            ]
           }
         ]
       }
@@ -427,19 +479,19 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
 
 // ---------------- FIND EXISTING OPEN ORDER (ANY OPTION) ----------------
 async function findExistingOrderChannel(guild, oh, userId) {
-  await guild.channels.fetch().catch(() => {});
-  const tag = orderUserTag(userId);
-  const cats = [oh?.categoryLiveriesId, oh?.categoryGraphicsId].filter(Boolean);
+  const channelId = findOpenOrderChannelIdForUser(userId);
+  if (!channelId) return null;
 
-  return (
-    guild.channels.cache.find(
-      (ch) =>
-        ch?.type === ChannelType.GuildText &&
-        cats.includes(ch.parentId) &&
-        typeof ch.topic === "string" &&
-        ch.topic.includes(tag)
-    ) ?? null
-  );
+  await guild.channels.fetch().catch(() => {});
+  const ch = guild.channels.cache.get(channelId);
+
+  if (!ch) {
+    // Channel no longer exists (e.g. deleted outside the normal close flow) — clean up the stale record.
+    deleteOrderRecord(channelId);
+    return null;
+  }
+
+  return ch;
 }
 
 // ---------------- CLOSE PROMPT (COMPLETED -> REVIEW OR SKIP) ----------------
@@ -511,11 +563,11 @@ function buildRatingSelectEphemeral() {
           .setCustomId(IDS.reviewRatingSelect)
           .setPlaceholder("Choose 1–5…")
           .addOptions([
-            { label: "1", value: "1", emoji: STAR_EMOJI_OBJ },
-            { label: "2", value: "2", emoji: STAR_EMOJI_OBJ },
-            { label: "3", value: "3", emoji: STAR_EMOJI_OBJ },
-            { label: "4", value: "4", emoji: STAR_EMOJI_OBJ },
-            { label: "5", value: "5", emoji: STAR_EMOJI_OBJ }
+            { label: "1", value: "1", emoji: STAR_EMOJI },
+            { label: "2", value: "2", emoji: STAR_EMOJI },
+            { label: "3", value: "3", emoji: STAR_EMOJI },
+            { label: "4", value: "4", emoji: STAR_EMOJI },
+            { label: "5", value: "5", emoji: STAR_EMOJI }
           ])
       )
     ],
@@ -602,12 +654,11 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
 
 // ---------------- CLOSE FLOW (TRANSCRIPT + LOG + DM + DELETE) ----------------
 async function closeOrderNow(client, interaction, channel, oh) {
-  const topic = channel.topic ?? "";
-  const openerId = getOrderUserFromTopic(topic);
-  const { orderType, payType } = getOrderMetaFromTopic(topic);
-  const handlerId = getClaimedBy(topic) ?? "none";
-
-  const staffRoleId = getStaffRoleFromTopic(topic) || oh?.staffRoleId;
+  const record = getOrderRecord(channel.id) ?? {};
+  const openerId = record.userId ?? null;
+  const orderType = record.orderType ?? null;
+  const payType = record.payType ?? null;
+  const handlerId = record.claimedBy ?? "none";
 
   const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
   const payTypeLabel = payType === "usd" ? "USD" : payType === "robux" ? "Robux" : "Unknown";
@@ -652,7 +703,8 @@ async function closeOrderNow(client, interaction, channel, oh) {
           `> **Type:** **${orderTypeLabel}**\n` +
           `> **Payment:** **${payTypeLabel}**\n` +
           `> **Handler:** ${handlerId !== "none" ? `\`${handlerId}\`` : "Unclaimed"}\n\n` +
-          `> If you need anything else, you can open a new order from the Order Hub.`
+          `> If you need anything else, you can open a new order from the Order Hub.`,
+        { imageUrl: DM_IMAGE_URL }
       );
       await postRawDM(client, openerId, dmBody);
     } catch (e) {
@@ -665,6 +717,9 @@ async function closeOrderNow(client, interaction, channel, oh) {
       console.error("[ORDERHUB] DM transcript failed:", e);
     }
   }
+
+  // Clean up the order record now that the channel is closing.
+  deleteOrderRecord(channel.id);
 
   // Delete
   setTimeout(() => {
@@ -742,25 +797,28 @@ export async function handleOrderHubInteractions(client, interaction) {
       interaction.customId.startsWith(IDS.payUsd + ":") ||
       interaction.customId.startsWith(IDS.payRobux + ":")
     ) {
+      // Ack immediately — channel creation/posting/logging below can take
+      // longer than Discord's 3s window, which caused "didn't respond in time".
+      await interaction.deferReply({ ephemeral: true });
+
       // ONE open order total
       const existing = await findExistingOrderChannel(interaction.guild, oh, interaction.user.id);
       if (existing) {
-        return interaction.reply({ content: `You already have an open order: <#${existing.id}>`, ephemeral: true });
+        return interaction.editReply({ content: `You already have an open order: <#${existing.id}>` });
       }
 
       const [base, orderType] = interaction.customId.split(":");
       const payType = base === IDS.payUsd ? "usd" : "robux";
 
       const guild = interaction.guild;
-      if (!guild) return interaction.reply({ content: "Server only.", ephemeral: true });
+      if (!guild) return interaction.editReply({ content: "Server only." });
 
       if (!oh?.staffRoleId) {
-        return interaction.reply({ content: "Missing orderhub.staffRoleId in config.json", ephemeral: true });
+        return interaction.editReply({ content: "Missing orderhub.staffRoleId in config.json" });
       }
       if (!oh?.categoryLiveriesId || !oh?.categoryGraphicsId) {
-        return interaction.reply({
-          content: "Missing orderhub.categoryLiveriesId / orderhub.categoryGraphicsId in config.json",
-          ephemeral: true
+        return interaction.editReply({
+          content: "Missing orderhub.categoryLiveriesId / orderhub.categoryGraphicsId in config.json"
         });
       }
 
@@ -770,17 +828,10 @@ export async function handleOrderHubInteractions(client, interaction) {
 
       const channelName = safeChannelName(`${payType}-${interaction.user.username}`);
 
-      const topic =
-        appendTopicTag(
-          appendTopicTag(orderUserTag(interaction.user.id), orderMetaTag(orderType, payType)),
-          staffRoleTopicTag(oh.staffRoleId)
-        );
-
       const created = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: parentId,
-        topic,
         permissionOverwrites: [
           { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
           {
@@ -807,10 +858,19 @@ export async function handleOrderHubInteractions(client, interaction) {
         ]
       });
 
+      // Order metadata now lives in the on-disk store, not the channel topic.
+      setOrderRecord(created.id, {
+        userId: interaction.user.id,
+        orderType,
+        payType,
+        staffRoleId: oh.staffRoleId,
+        claimedBy: null
+      });
+
       const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
       const payTypeLabel = payType === "usd" ? "USD" : "Robux";
 
-      await postRaw(
+      const openMsg = await postRaw(
         client,
         created.id,
         buildOrderOpenPayload({
@@ -820,6 +880,13 @@ export async function handleOrderHubInteractions(client, interaction) {
           payTypeLabel
         })
       );
+
+      // Pin the order-created message so it stays visible at the top.
+      try {
+        await client.rest.put(Routes.channelPin(created.id, openMsg.id));
+      } catch (e) {
+        console.error("[ORDERHUB] failed to pin order-created message:", e);
+      }
 
       // log opened
       try {
@@ -835,14 +902,14 @@ export async function handleOrderHubInteractions(client, interaction) {
         console.error("[ORDERHUB] open log failed:", e);
       }
 
-      return interaction.reply({ content: `✅ Your order has been created: <#${created.id}>`, ephemeral: true });
+      return interaction.editReply({ content: `✅ Your order has been created: <#${created.id}>` });
     }
 
     // REVIEW BUTTONS (posted inside the order channel)
     if (interaction.customId === IDS.reviewLeaveBtn || interaction.customId === IDS.reviewSkipBtn) {
       if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
 
-      const openerId = getOrderUserFromTopic(channel.topic ?? "");
+      const openerId = getOrderRecord(channel.id)?.userId ?? null;
       if (!openerId) return interaction.reply({ content: "Could not find the order owner.", ephemeral: true });
 
       // Leave a Review -> ONLY opener
@@ -874,24 +941,14 @@ export async function handleOrderHubInteractions(client, interaction) {
     const msg = interaction.message;
     if (!channel) return;
 
-    const staffRoleId = getStaffRoleFromTopic(channel.topic ?? "") || oh?.staffRoleId;
-
-    if (!staffRoleId || !hasRole(interaction, staffRoleId)) {
-      return interaction.reply({
-        content: "Only the assigned staff team for this order can use order actions.",
-        ephemeral: true
-      });
-    }
+    const staffRoleId = getOrderRecord(channel.id)?.staffRoleId || oh?.staffRoleId;
 
     // CLAIM
     if (action === "claim") {
-      const topic = channel.topic ?? "";
-      if (hasClaimTag(topic)) {
-        const claimedBy = getClaimedBy(topic);
+      const record = getOrderRecord(channel.id);
+      if (record?.claimedBy) {
         return interaction.reply({
-          content: claimedBy
-            ? `This order is already claimed by <@${claimedBy}>.`
-            : "This order has already been claimed.",
+          content: `This order is already claimed by <@${record.claimedBy}>.`,
           ephemeral: true
         });
       }
@@ -899,9 +956,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       const claimMessage = `Hello! My name is <@${interaction.user.id}> and I’ll be assisting you with this order.`;
       await msg.reply({ content: claimMessage, allowedMentions: { parse: ["users"] } });
 
-      try {
-        await channel.setTopic(appendTopicTag(topic, claimedTopicTag(interaction.user.id)));
-      } catch {}
+      setOrderRecord(channel.id, { claimedBy: interaction.user.id });
 
       try {
         const claimedLog = layoutMessage(
@@ -934,8 +989,7 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     // CLOSE -> post completed prompt (review/skip)
     if (action === "close") {
-      const topic = channel.topic ?? "";
-      const openerId = getOrderUserFromTopic(topic);
+      const openerId = getOrderRecord(channel.id)?.userId ?? null;
 
       await interaction.reply({ content: "Sent close options.", ephemeral: true }).catch(() => {});
       if (!openerId) return;
@@ -953,7 +1007,7 @@ export async function handleOrderHubInteractions(client, interaction) {
     const channel = interaction.channel;
     if (!channel) return interaction.reply({ content: "No channel found.", ephemeral: true });
 
-    const staffRoleId = getStaffRoleFromTopic(channel.topic ?? "") || oh?.staffRoleId;
+    const staffRoleId = getOrderRecord(channel.id)?.staffRoleId || oh?.staffRoleId;
 
     if (!staffRoleId || !hasRole(interaction, staffRoleId)) {
       return interaction.reply({
