@@ -563,6 +563,18 @@ function buildClosePromptPayload(openerId) {
               { type: 2, style: 2, label: "Leave a Review", custom_id: IDS.reviewLeaveBtn },
               { type: 2, style: 2, label: "Close Without Review", custom_id: IDS.reviewSkipBtn }
             ]
+          },
+          { type: 14, spacing: 2 },
+          // Bottom image slot.
+          {
+            type: 12,
+            items: [
+              {
+                media: {
+                  url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
+                }
+              }
+            ]
           }
         ]
       }
@@ -953,7 +965,7 @@ export async function handleOrderHubInteractions(client, interaction) {
                 items: [
                   {
                     media: {
-                      url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
+                      url: "PASTE_IMAGE_LINK_HERE"
                     }
                   }
                 ]
@@ -1049,6 +1061,10 @@ export async function handleOrderHubInteractions(client, interaction) {
 
       const unclaimedRecord = setOrderRecord(channel.id, { claimedBy: null });
       await refreshTicketMessage(client, channel.id, record.openMsgId ?? msg.id, unclaimedRecord);
+
+      await postRaw(client, channel.id, {
+        content: "This order has been unclaimed. Please wait for another designer to pick it up."
+      }).catch((e) => console.error("[ORDERHUB] unclaim announce failed:", e));
 
       try {
         const unclaimedLog = layoutMessage(
@@ -1331,6 +1347,11 @@ export async function handleForceUnclaimCommand(client, message) {
 
   await refreshTicketMessage(client, channel.id, record.openMsgId, updated);
 
+  await postRaw(client, channel.id, {
+    content: `This order has been unclaimed. Please wait for another designer to pick it up.`,
+    allowed_mentions: { parse: ["users"] }
+  }).catch((e) => console.error("[ORDERHUB] forceunclaim announce failed:", e));
+
   try {
     const log = layoutMessage(
       `## 🔴 **Order Force Unclaimed**\n` +
@@ -1343,7 +1364,24 @@ export async function handleForceUnclaimCommand(client, message) {
     console.error("[ORDERHUB] forceunclaim log failed:", e);
   }
 
-  return message
-    .reply(`Force unclaimed. Previously claimed by <@${previousClaimer}>. Dropdown reset to **Claim**.`)
-    .catch(() => {});
+  // Clean up the "-forceunclaim" command message itself.
+  return message.delete().catch(() => {});
+}
+
+// Convenience helper — call this ONCE with your client after login (e.g. in
+// your ready handler or main file) if you haven't already wired
+// handleForceUnclaimCommand into a messageCreate listener yourself:
+//
+//   import { registerForceUnclaimListener } from "./Features/orderhub.js";
+//   registerForceUnclaimListener(client);
+//
+// If -forceunclaim "does nothing", this is almost always the cause — the
+// handler above only runs if something is actually listening for
+// messageCreate and calling it.
+export function registerForceUnclaimListener(client) {
+  client.on("messageCreate", (message) => {
+    handleForceUnclaimCommand(client, message).catch((e) => {
+      console.error("[ORDERHUB] forceunclaim listener error:", e);
+    });
+  });
 }
