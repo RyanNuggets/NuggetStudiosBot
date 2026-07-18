@@ -1074,7 +1074,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       await refreshTicketMessage(client, channel.id, record.openMsgId ?? msg.id, unclaimedRecord);
 
       await postRaw(client, channel.id, {
-        content: "🟠 This order has been unclaimed. Waiting for another designer to pick it up."
+        content: "This order has been unclaimed. Please wait for another designer to pick it up."
       }).catch((e) => console.error("[ORDERHUB] unclaim announce failed:", e));
 
       try {
@@ -1359,7 +1359,7 @@ export async function handleForceUnclaimCommand(client, message) {
   await refreshTicketMessage(client, channel.id, record.openMsgId, updated);
 
   await postRaw(client, channel.id, {
-    content: `🔴 <@${previousClaimer}> has been force unclaimed from this order. Waiting for another designer to pick it up.`,
+    content: `This order has been unclaimed. Please wait for another designer to pick it up.`,
     allowed_mentions: { parse: ["users"] }
   }).catch((e) => console.error("[ORDERHUB] forceunclaim announce failed:", e));
 
