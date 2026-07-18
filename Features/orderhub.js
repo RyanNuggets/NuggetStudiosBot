@@ -784,6 +784,8 @@ async function closeOrderNow(client, interaction, channel, oh) {
 }
 
 // ---------------- SEND ORDER HUB MESSAGE ----------------
+let forceUnclaimListenerRegistered = false;
+
 export async function sendOrderHub(client) {
   const conf = readConfig();
   const oh = conf.orderhub;
@@ -791,6 +793,16 @@ export async function sendOrderHub(client) {
   if (!oh?.orderHubChannelId) throw new Error("Missing config.orderhub.orderHubChannelId");
   await postRaw(client, oh.orderHubChannelId, ORDER_HUB_LAYOUT);
   console.log("✅ Order Hub sent");
+
+  // Piggyback the -forceunclaim listener registration here so it's always
+  // wired up automatically on startup, without needing a separate edit to
+  // index.js. Guarded so calling sendOrderHub() more than once doesn't
+  // stack duplicate listeners.
+  if (!forceUnclaimListenerRegistered) {
+    registerForceUnclaimListener(client);
+    forceUnclaimListenerRegistered = true;
+    console.log("✅ -forceunclaim listener registered");
+  }
 }
 
 // ---------------- INTERACTION HANDLER ----------------
@@ -951,26 +963,25 @@ export async function handleOrderHubInteractions(client, interaction) {
         console.error("[ORDERHUB] open log failed:", e);
       }
 
+      const confirmComponents = [{ type: 10, content: `✅ Your order has been created: <#${created.id}>` }];
+
+      // Only attach the image block once you've pasted a real https:// link
+      // below — an invalid/placeholder URL here would make Discord reject
+      // the whole edit (400 Invalid Form Body) and break order creation.
+      const ORDER_CREATED_IMAGE_URL = "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97";
+      if (/^https?:\/\//i.test(ORDER_CREATED_IMAGE_URL)) {
+        confirmComponents.push(
+          { type: 14, spacing: 2 },
+          { type: 12, items: [{ media: { url: ORDER_CREATED_IMAGE_URL } }] }
+        );
+      }
+
       return interaction.editReply({
         flags: 32768,
         components: [
           {
             type: 17,
-            components: [
-              { type: 10, content: `✅ Your order has been created: <#${created.id}>` },
-              { type: 14, spacing: 2 },
-              // Bottom image slot — paste your image link below.
-              {
-                type: 12,
-                items: [
-                  {
-                    media: {
-                      url: "PASTE_IMAGE_LINK_HERE"
-                    }
-                  }
-                ]
-              }
-            ]
+            components: confirmComponents
           }
         ]
       });
@@ -1063,7 +1074,7 @@ export async function handleOrderHubInteractions(client, interaction) {
       await refreshTicketMessage(client, channel.id, record.openMsgId ?? msg.id, unclaimedRecord);
 
       await postRaw(client, channel.id, {
-        content: "This order has been unclaimed. Please wait for another designer to pick it up."
+        content: "🟠 This order has been unclaimed. Waiting for another designer to pick it up."
       }).catch((e) => console.error("[ORDERHUB] unclaim announce failed:", e));
 
       try {
@@ -1348,7 +1359,7 @@ export async function handleForceUnclaimCommand(client, message) {
   await refreshTicketMessage(client, channel.id, record.openMsgId, updated);
 
   await postRaw(client, channel.id, {
-    content: `This order has been unclaimed. Please wait for another designer to pick it up.`,
+    content: `🔴 <@${previousClaimer}> has been force unclaimed from this order. Waiting for another designer to pick it up.`,
     allowed_mentions: { parse: ["users"] }
   }).catch((e) => console.error("[ORDERHUB] forceunclaim announce failed:", e));
 
