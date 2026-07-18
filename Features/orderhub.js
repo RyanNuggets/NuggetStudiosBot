@@ -61,7 +61,7 @@ const ORDER_HUB_LAYOUT = {
           items: [
             {
               media: {
-                url: "https://media.discordapp.net/attachments/1467051814733222043/1467567443873632482/NS_Order_Hub.png?ex=6980da30&is=697f88b0&hm=87b020248f4ff3b76ee51012bc0753b49f70d8776236d83403c3cea2a5d460d8&=&format=webp&quality=lossless&width=1872&height=560"
+                url: "https://media.discordapp.net/attachments/1467051814733222043/1528161313589821540/Nugget_Studios_Banner_9.png?ex=6a5d4aa1&is=6a5bf921&hm=09aeaa561ae1cd270361f0f89cfbbf7ac5a3037d8b05d7615e0cf7a79d3513bb&=&format=webp&quality=lossless"
               }
             }
           ]
@@ -71,10 +71,11 @@ const ORDER_HUB_LAYOUT = {
           type: 10,
           content:
             "## **Order Here**\n" +
-            "Looking for a **custom livery or graphic**? Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
-            "<:shoppingcart:1467165075025432618> **Select an Order Type:**\n" +
-            "<:dot:1467233440117297203> **Liveries**  **`-`**  Order a custom vehicle livery\n" +
-            "<:dot:1467233440117297203> **Graphics**  **`-`**  Order a custom banner or graphic"
+            "Bring your vision to life with Nugget Studios. We specialize in custom liveries, graphics, and brand identity, delivering high-quality, affordable designs with precision, consistency, and fast turnaround times. Every order is carefully managed by our trusted creative team from concept to completion. Start an order and our team will review your request shortly. Choose one of the options below to continue.\n\n" +
+            "-# <:shield:1528162879524704407> All orders are subject to our Terms of Service: https://nuggetstudios.xyz/tos.\n\n" +
+            "<:shoppingcart:1528163263861231847> **Select an Order Type:**\n" +
+            "<:dot:1528163225806307519> **Liveries**  **`-`**  Order a custom vehicle livery\n" +
+            "<:dot:1528163225806307519> **Graphics**  **`-`**  Order logos, banners, branding, and other custom graphics"
         },
         { type: 14, spacing: 2 },
         {
@@ -108,7 +109,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467572324994908200/NS_Banners.png?ex=6980debc&is=697f8d3c&hm=1e3b2b6480319ac248e56c48d2ba88bcdc01f52c9265d00c715e5986cb593d0f&=&format=webp&quality=lossless&width=1872&height=560"
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1528163718041571380/Nugget_Studios_Banner_10.png?ex=6a5d4cde&is=6a5bfb5e&hm=67de8ed6964cf3af35ee4a2d21bf5677e926629bbdf7c25de8ac6e2b018d566f&=&format=webp&quality=lossless"
                 }
               }
             ]
@@ -119,11 +120,10 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
           {
             type: 10,
             content:
-              "## **Payment Method**\n" +
               "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
-              "**`-`** **Available Payment Options:**\n" +
-              "<:card:1467165047624302664> **USD**  **`-`**  PayPal / Credit/Debit Card\n" +
-              "<:robux:1467165348565487841> **Robux**  **`-`**  Robux payments are accepted for eligible orders\n\n" +
+              "<:wallet:1528165051859468348> **Available Payment Options:**\n" +
+              "<:creditcard:1528164289192525996> **USD** <:dot:1528163225806307519> PayPal / Credit/Debit Card\n" +
+              "<:robux:1528164258251018281> Robux <:dot:1528163225806307519> Robux payments are accepted for eligible orders\n\n" +
               `**Order Type:** **${orderTypeLabel}**`
           },
           { type: 14, spacing: 2 },
@@ -133,7 +133,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+                  url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
                 }
               }
             ]
@@ -248,7 +248,7 @@ function layoutMessage(contentMarkdown, { pingLine = null } = {}) {
         items: [
           {
             media: {
-              url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
+              url: "https://media.discordapp.net/attachments/1467051814733222043/1528165504936575106/Nugget_Studios_Banner_11.png?ex=6a5d4e88&is=6a5bfd08&hm=418a2a4686331cd354bf19d03662e57296671e2439dff63953c095440e149de0&=&format=webp&quality=lossless"
             }
           }
         ]
@@ -383,7 +383,7 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467572880345665757/NS_Order_Created.png?ex=6980df40&is=697f8dc0&hm=0e8df1a37a4a215e39be1444eea7ace23b715bcd01794fde76676159f6a10973&=&format=webp&quality=lossless&width=550&height=165"
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1528166118399672371/Nugget_Studios_Banner_13.png?ex=6a5d4f1a&is=6a5bfd9a&hm=d9182920f57f8bb526f0aa82d873d01fe192b6e0aac4102abb9ea1fc6d1458c7&=&format=webp&quality=lossless"
                 }
               }
             ]
@@ -456,7 +456,7 @@ function buildClosePromptPayload(openerId) {
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467573189625254151/NS_Thank_You.png?ex=6980df8a&is=697f8e0a&hm=76eb22889412ec07bec13f1057b3a28d8953557d2cb0ce36740a7acbb85c4128&=&format=webp&quality=lossless&width=1872&height=560"
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1528165504936575106/Nugget_Studios_Banner_11.png?ex=6a5d4e88&is=6a5bfd08&hm=418a2a4686331cd354bf19d03662e57296671e2439dff63953c095440e149de0&=&format=webp&quality=lossless"
                 }
               }
             ]
@@ -563,7 +563,7 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1467567459841212557/NS_Reviews.png?ex=6980da34&is=697f88b4&hm=1c2f5588610dea6021657aa0bd8ab51cce89cbf5997863f11e9439f92ef53fc0&=&format=webp&quality=lossless&width=1872&height=560"
+                  url: "https://media.discordapp.net/attachments/1467051814733222043/1528166816273272912/Nugget_Studios_Banner_15.png?ex=6a5d4fc0&is=6a5bfe40&hm=3c360dd1ac9152fe99c6ec17bd01fa92e4a1b97b04bf33a12ddc314c56e20e7b&=&format=webp&quality=lossless"
                 }
               }
             ]
@@ -588,7 +588,7 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
             items: [
               {
                 media: {
-                  url: "https://media.discordapp.net/attachments/1467051814733222043/1470879997588934679/New_Project_22.png?ex=698ce73f&is=698b95bf&hm=c16abb764f0616fc60ca07f8759a8d7864652fbd7501e8c4b4c48b53b55a8c21&=&format=webp&quality=lossless"
+                  url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
                 }
               }
             ]
