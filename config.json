@@ -18,6 +18,7 @@
     "orderLogsChannelId": "1526910816413024416",
     "reviewChannelId": "1485805640860307516",
     "serviceChangeRoleId": "1485623742439620709",
+    "forceUnclaimRoleId": "1485623742439620709",
     "serviceStatus": { "liveries": "open", "graphics": "open" }
   },
 
