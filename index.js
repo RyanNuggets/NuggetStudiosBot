@@ -8,6 +8,9 @@ import registerWelcomeModule from "./Features/welcome.js";
 import { sendOrderHub, handleOrderHubInteractions } from "./Features/orderhub.js";
 import registerTaxModule from "./Features/tax.js";
 
+// ✅ /servicechange slash command
+import { data as serviceChangeData, execute as serviceChangeExecute } from "./Commands/servicechange.js";
+
 // ✅ Package system (JSON file store + Bloxlink verified claims)
 import { registerPackageSystem } from "./Features/packageSystem/index.js";
 
@@ -100,11 +103,32 @@ client.once("ready", async () => {
       console.error("❌ Failed to send order hub:", err);
     }
   }
+
+  // ✅ Register /servicechange
+  // Guild-scoped registration (instant). Requires config.guildId to be set.
+  // Switch to client.application.commands.create(...) for a global command
+  // (takes up to ~1hr to propagate, but works across all servers).
+  try {
+    if (config.guildId) {
+      const guild = await client.guilds.fetch(config.guildId);
+      await guild.commands.create(serviceChangeData.toJSON());
+      console.log("✅ /servicechange registered (guild-scoped)");
+    } else {
+      console.warn("⚠️ Missing config.guildId — skipped registering /servicechange. Add guildId or switch to global registration.");
+    }
+  } catch (err) {
+    console.error("❌ Failed to register /servicechange:", err);
+  }
 });
 
 // ---------------- INTERACTIONS ----------------
 client.on("interactionCreate", async (interaction) => {
   try {
+    // ✅ /servicechange
+    if (interaction.isChatInputCommand?.() && interaction.commandName === "servicechange") {
+      return await serviceChangeExecute(interaction);
+    }
+
     await handleDashboardInteractions(client, interaction);
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
