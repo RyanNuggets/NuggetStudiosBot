@@ -410,7 +410,37 @@ async function sendPlainTranscriptToDM(client, userId, orderId, transcriptText) 
 }
 
 // ---------------- ORDER OPEN MESSAGE ----------------
-function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLabel }) {
+function orderTypeLabelFrom(orderType) {
+  return orderType === "graphics" ? "Graphics" : "Liveries";
+}
+
+function payTypeLabelFrom(payType) {
+  return payType === "usd" ? "USD" : payType === "robux" ? "Robux" : "Unknown";
+}
+
+// Builds the ticket actions row fresh every time — this is also what makes
+// the dropdown "reset" back to its placeholder after each use, since we
+// re-send the whole row instead of leaving Discord's last-picked state in
+// place. Swaps Claim <-> Unclaim depending on current claim state.
+function buildTicketActionsRow(isClaimed) {
+  return {
+    type: 1,
+    components: [
+      {
+        type: 3,
+        custom_id: IDS.ticketActionsSelect,
+        placeholder: "Order Actions…",
+        options: [
+          isClaimed ? { label: "Unclaim", value: "unclaim" } : { label: "Claim", value: "claim" },
+          { label: "Close", value: "close" },
+          { label: "Add/Remove User", value: "toggle_user" }
+        ]
+      }
+    ]
+  };
+}
+
+function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLabel, claimedBy = null }) {
   return {
     flags: 32768,
     allowed_mentions: { parse: ["users", "roles"] },
@@ -444,21 +474,7 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
               `> Send your order details in this channel. A staff member will respond shortly.`
           },
           { type: 14, spacing: 2 },
-          {
-            type: 1,
-            components: [
-              {
-                type: 3,
-                custom_id: IDS.ticketActionsSelect,
-                placeholder: "Order Actions…",
-                options: [
-                  { label: "Claim", value: "claim" },
-                  { label: "Close", value: "close" },
-                  { label: "Add/Remove User", value: "toggle_user" }
-                ]
-              }
-            ]
-          },
+          buildTicketActionsRow(!!claimedBy),
           { type: 14, spacing: 2 },
           // Bottom image slot — paste your image link below.
           {
@@ -475,6 +491,25 @@ function buildOrderOpenPayload({ userId, staffRoleId, orderTypeLabel, payTypeLab
       }
     ]
   };
+}
+
+// Re-sends the full ticket-open message with fresh state — resets the
+// dropdown to its placeholder and flips Claim/Unclaim as needed.
+async function refreshTicketMessage(client, channelId, messageId, record) {
+  if (!messageId || !record) return;
+  try {
+    await client.rest.patch(Routes.channelMessage(channelId, messageId), {
+      body: buildOrderOpenPayload({
+        userId: record.userId,
+        staffRoleId: record.staffRoleId,
+        orderTypeLabel: orderTypeLabelFrom(record.orderType),
+        payTypeLabel: payTypeLabelFrom(record.payType),
+        claimedBy: record.claimedBy
+      })
+    });
+  } catch (e) {
+    console.error("[ORDERHUB] failed to refresh ticket message:", e);
+  }
 }
 
 // ---------------- FIND EXISTING OPEN ORDER (ANY OPTION) ----------------
@@ -584,8 +619,9 @@ function buildProductSelectEphemeral() {
           .setCustomId(IDS.reviewProductSelect)
           .setPlaceholder("Select a product…")
           .addOptions([
-            { label: "Banner", value: "Banner" },
-            { label: "Bundle", value: "Bundle" }
+            { label: "Livery Design", value: "Livery Design" },
+            { label: "Graphic Design", value: "Graphic Design" },
+            { label: "Brand Identity Design", value: "Brand Identity Design" }
           ])
       )
     ],
@@ -610,7 +646,6 @@ function buildCleanReviewEmbed({ userId, designerId, rating, product, message, o
         components: [
           // ---- Section 1 (was Embed 1: banner only) ----
           // No text for this section — just a bottom image slot. Paste your image link below.
-          { type: 14, spacing: 2 },
           {
             type: 12,
             items: [
@@ -881,6 +916,8 @@ export async function handleOrderHubInteractions(client, interaction) {
         })
       );
 
+      setOrderRecord(created.id, { openMsgId: openMsg.id });
+
       // Pin the order-created message so it stays visible at the top.
       try {
         await client.rest.put(Routes.channelPin(created.id, openMsg.id));
@@ -902,7 +939,29 @@ export async function handleOrderHubInteractions(client, interaction) {
         console.error("[ORDERHUB] open log failed:", e);
       }
 
-      return interaction.editReply({ content: `✅ Your order has been created: <#${created.id}>` });
+      return interaction.editReply({
+        flags: 32768,
+        components: [
+          {
+            type: 17,
+            components: [
+              { type: 10, content: `✅ Your order has been created: <#${created.id}>` },
+              { type: 14, spacing: 2 },
+              // Bottom image slot — paste your image link below.
+              {
+                type: 12,
+                items: [
+                  {
+                    media: {
+                      url: "https://media.discordapp.net/attachments/1486296464350249040/1527106449740791887/Dubai_Roleplay_Banner_Footer_1.png?ex=6a5cbff5&is=6a5b6e75&hm=abcf9e37cf46be3774576d9c1aa3e77e3042c3f0ce179eb4c485acb916cc5996&=&format=webp&quality=lossless&width=1872&height=97"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      });
     }
 
     // REVIEW BUTTONS (posted inside the order channel)
@@ -956,7 +1015,8 @@ export async function handleOrderHubInteractions(client, interaction) {
       const claimMessage = `Hello! My name is <@${interaction.user.id}> and I’ll be assisting you with this order.`;
       await msg.reply({ content: claimMessage, allowedMentions: { parse: ["users"] } });
 
-      setOrderRecord(channel.id, { claimedBy: interaction.user.id });
+      const claimedRecord = setOrderRecord(channel.id, { claimedBy: interaction.user.id });
+      await refreshTicketMessage(client, channel.id, record?.openMsgId ?? msg.id, claimedRecord);
 
       try {
         const claimedLog = layoutMessage(
@@ -972,8 +1032,43 @@ export async function handleOrderHubInteractions(client, interaction) {
       return interaction.reply({ content: "Order claimed.", ephemeral: true });
     }
 
+    // UNCLAIM (self-service — only the person who claimed it can undo it)
+    if (action === "unclaim") {
+      const record = getOrderRecord(channel.id);
+
+      if (!record?.claimedBy) {
+        return interaction.reply({ content: "This order isn’t claimed.", ephemeral: true });
+      }
+
+      if (record.claimedBy !== interaction.user.id) {
+        return interaction.reply({
+          content: `Only <@${record.claimedBy}>, who claimed this order, can unclaim it.`,
+          ephemeral: true
+        });
+      }
+
+      const unclaimedRecord = setOrderRecord(channel.id, { claimedBy: null });
+      await refreshTicketMessage(client, channel.id, record.openMsgId ?? msg.id, unclaimedRecord);
+
+      try {
+        const unclaimedLog = layoutMessage(
+          `## 🟠 **Order Unclaimed**\n` +
+            `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
+            `> **Unclaimed By:** <@${interaction.user.id}>`
+        );
+        await logOrderMessage(client, oh, unclaimedLog);
+      } catch (e) {
+        console.error("[ORDERHUB] unclaim log failed:", e);
+      }
+
+      return interaction.reply({ content: "Order unclaimed.", ephemeral: true });
+    }
+
     // TOGGLE USER
     if (action === "toggle_user") {
+      const record = getOrderRecord(channel.id);
+      await refreshTicketMessage(client, channel.id, record?.openMsgId ?? msg.id, record);
+
       const picker = new UserSelectMenuBuilder()
         .setCustomId(IDS.ticketUserToggleSelect)
         .setPlaceholder("Select a user to add/remove…")
@@ -989,8 +1084,10 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     // CLOSE -> post completed prompt (review/skip)
     if (action === "close") {
-      const openerId = getOrderRecord(channel.id)?.userId ?? null;
+      const record = getOrderRecord(channel.id);
+      const openerId = record?.userId ?? null;
 
+      await refreshTicketMessage(client, channel.id, record?.openMsgId ?? msg.id, record);
       await interaction.reply({ content: "Sent close options.", ephemeral: true }).catch(() => {});
       if (!openerId) return;
 
@@ -1181,4 +1278,72 @@ export async function handleOrderHubInteractions(client, interaction) {
 
     return closeOrderNow(client, interaction, channel, oh);
   }
+}
+
+// ---------------- FORCE UNCLAIM (PREFIX COMMAND) ----------------
+// Usage: type "-forceunclaim" in the order ticket you want to force-unclaim.
+// No extra arguments/variables needed — it always targets the ticket it's
+// run in. Restricted to the role set at orderhub.forceUnclaimRoleId in
+// config.json.
+//
+// This file only exports the handler — wire it into your existing message
+// listener, e.g. in your main file:
+//
+//   import { handleForceUnclaimCommand } from "./Features/orderhub.js";
+//   client.on("messageCreate", (message) => handleForceUnclaimCommand(client, message));
+//
+export async function handleForceUnclaimCommand(client, message) {
+  if (!message || message.author?.bot) return;
+  if (!message.guild) return;
+
+  const trigger = message.content?.trim().split(/\s+/)[0]?.toLowerCase();
+  if (trigger !== "-forceunclaim") return;
+
+  const conf = readConfig();
+  const oh = conf.orderhub;
+  if (!oh) return;
+
+  const globalGuildId = conf.guildId;
+  if (globalGuildId && message.guild.id !== globalGuildId) return;
+
+  const forceUnclaimRoleId = oh.forceUnclaimRoleId;
+  if (!forceUnclaimRoleId) {
+    return message.reply("Missing **orderhub.forceUnclaimRoleId** in config.json").catch(() => {});
+  }
+
+  if (!hasRole({ member: message.member }, forceUnclaimRoleId)) {
+    return message.reply("You don’t have permission to use this command.").catch(() => {});
+  }
+
+  const channel = message.channel;
+  const record = getOrderRecord(channel.id);
+
+  if (!record) {
+    return message.reply("This isn’t an active order channel.").catch(() => {});
+  }
+
+  if (!record.claimedBy) {
+    return message.reply("This order isn’t claimed.").catch(() => {});
+  }
+
+  const previousClaimer = record.claimedBy;
+  const updated = setOrderRecord(channel.id, { claimedBy: null });
+
+  await refreshTicketMessage(client, channel.id, record.openMsgId, updated);
+
+  try {
+    const log = layoutMessage(
+      `## 🔴 **Order Force Unclaimed**\n` +
+        `> **Order:** <#${channel.id}> (\`${channel.id}\`)\n` +
+        `> **Previously Claimed By:** <@${previousClaimer}>\n` +
+        `> **Force Unclaimed By:** <@${message.author.id}>`
+    );
+    await logOrderMessage(client, oh, log);
+  } catch (e) {
+    console.error("[ORDERHUB] forceunclaim log failed:", e);
+  }
+
+  return message
+    .reply(`Force unclaimed. Previously claimed by <@${previousClaimer}>. Dropdown reset to **Claim**.`)
+    .catch(() => {});
 }
