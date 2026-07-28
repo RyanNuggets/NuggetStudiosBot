@@ -1,53 +1,57 @@
-import { Events } from "discord.js";
-import fs from "fs";
+const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = require("discord.js");
+const { get } = require("http");
 
-const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
+module.exports = {
+    name: "guildMemberAdd",
+    once: false,
+    async execute(client, member) {
+        const welcomeChannelId = "1485805832519159858";
+        const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
 
-async function resolveWelcomeChannel(guild, channelId) {
-  if (!channelId) return null;
+        const guild = member.guild;
+        const membercount = guild.memberCount;
 
-  let ch = guild.channels.cache.get(channelId);
-  if (ch) return ch;
+        // const roleId1 = "1498946139070660609";
+// const role1 = guild.roles.cache.get(roleId1);
 
-  try {
-    ch = await guild.channels.fetch(channelId);
-    return ch ?? null;
-  } catch {
-    return null;
-  }
-}
+// if (role1) {
+//     try {
+//         await member.roles.add(role1);
+//         console.log(`Assigned role ${role1.name} to ${member.user.tag}`);
+//     } catch (error) {
+//         console.error(`Failed to assign role1 to ${member.user.tag}: ${error}`);
+//     }
+// } else {
+//     console.error(`Role with ID ${roleId1} not found.`);
+// }
 
-export default function registerWelcomeModule(client) {
-  client.on(Events.GuildMemberAdd, async (member) => {
-    try {
-      const conf = readConfig();
-      const welcomeConf = conf?.welcome;
-      const globalGuildId = conf?.guildId;
+        if (welcomeChannel) {
+            const welcomeMessage = `Welcome to **:nsgreen: Nugget Studios**, ${member}! We are now at **${membercount}** members.`;
 
-      if (!welcomeConf?.enabled) return;
-      if (globalGuildId && member.guild.id !== globalGuildId) return;
+            const mcButton = new ButtonBuilder()
+                .setCustomId('mcButton')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji({
+                id: "1527102715371716688",
+                name: "nsgreen"
+                })
+                .setLabel(membercount.toString())
+                .setDisabled(true);
 
-      const channel = await resolveWelcomeChannel(
-        member.guild,
-        welcomeConf.channelId
-      );
-      if (!channel || !channel.isTextBased()) return;
+                const getStartedButton = new ButtonBuilder()
+                .setStyle(ButtonStyle.Link)
+                .setLabel('Dashboard')
+              .setURL('https://discord.com/channels/1015000518889853028/1486640714128298135');            
 
-      const serverCount = member.guild.memberCount;
-      const emoji = "<:nspink:1467186922211377427>";
+            const row = new ActionRowBuilder().addComponents(mcButton, getStartedButton);
 
-      const message =
-        `\`-\` Welcome ${member} to ${emoji} **Nugget Studios**, ` +
-        `we are now at **${serverCount}** members.`;
-
-      await channel.send({
-        content: message,
-        allowedMentions: { users: [member.id] }
-      });
-    } catch (err) {
-      console.error("[WELCOME] failed:", err);
+            try {
+                await welcomeChannel.send({ content: `${welcomeMessage}`, components: [row] });
+            } catch (error) {
+                console.error(`Failed to send welcome message: ${error}`);
+            }
+        } else {
+            console.error(`Channel with ID ${welcomeChannelId} not found.`);
+        }
     }
-  });
-
-  console.log("✅ Welcome module registered");
-}
+};
