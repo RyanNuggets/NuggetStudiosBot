@@ -1,6 +1,6 @@
 // Features/Payment/buttons/paymentMethodComponents.js
 import { ActionRowBuilder, StringSelectMenuBuilder } from "discord.js";
-import { CustomId } from "../config/constants.js";
+import { CustomId, PaymentMethod } from "../config/constants.js";
 
 /**
  * Select menu used on the payment method embed. A select menu (rather than
@@ -12,11 +12,9 @@ export function buildPaymentMethodSelect(paymentId) {
     .setCustomId(`${CustomId.METHOD_SELECT}:${paymentId}`)
     .setPlaceholder("Choose a payment method")
     .addOptions(
-      { label: "Robux Gamepass", value: "Robux Gamepass", emoji: "🎮" },
-      { label: "Robux T-Shirt", value: "Robux T-Shirt", emoji: "👕" },
-      { label: "Apple Pay", value: "Apple Pay", emoji: "🍎" },
-      { label: "Google Pay", value: "Google Pay", emoji: "📱" },
-      { label: "Credit/Debit Card", value: "Credit/Debit Card", emoji: "💳" }
+      { label: "Robux Gamepass", value: PaymentMethod.ROBUX_GAMEPASS, emoji: "🎮" },
+      { label: "Robux T-Shirt", value: PaymentMethod.ROBUX_TSHIRT, emoji: "👕" },
+      { label: PaymentMethod.ONLINE_PAYMENT, value: PaymentMethod.ONLINE_PAYMENT, emoji: "💳" }
     );
 
   return new ActionRowBuilder().addComponents(select);
