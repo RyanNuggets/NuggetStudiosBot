@@ -14,6 +14,9 @@ import { data as serviceChangeData, execute as serviceChangeExecute } from "./Fe
 // ✅ Package system (JSON file store + Bloxlink verified claims)
 import { registerPackageSystem } from "./Features/packageSystem/index.js";
 
+// ✅ Payment system (Robux Gamepass/T-Shirt, Apple/Google Pay via Ziina, Card via PayPal)
+import registerPaymentModule from "./Features/Payment/index.js";
+
 // --- NODE 18+ CRASH FIX (kept from your secondary test) ---
 if (typeof globalThis.File === "undefined") {
   const { createRequire } = await import("module");
@@ -33,12 +36,6 @@ const readConfig = () => JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const config = readConfig();
 
 // ---------------- DATA STORAGE ----------------
-// The package system stores its data as JSON on disk
-// (Features/Shared/jsonStore.js), not in an external database.
-//
-// On Railway: attach a Volume to this service and set DATA_DIR to its mount
-// path (e.g. DATA_DIR=/data). Without a volume, DATA_DIR defaults to ./data,
-// which works locally but is wiped on every Railway redeploy.
 import { DATA_DIR } from "./Features/Shared/jsonStore.js";
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,13 +53,11 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ✅ Add this so other modules can call client.logs.custom / error
 client.logs = {
   custom: (...args) => console.log("[LOG]", ...args),
   error: (...args) => console.error("[ERROR]", ...args)
 };
 
-// Toggle these to true only when you want to post the messages once.
 const POST_DASHBOARD_ON_START = true;
 const POST_ORDERHUB_ON_START = true;
 
@@ -75,11 +70,17 @@ try {
   console.error("❌ Package system failed to load:", err);
 }
 
+try {
+  registerPaymentModule(client);
+  console.log("✅ Payment module loaded (waiting for ready to register commands)");
+} catch (err) {
+  console.error("❌ Payment module failed to load:", err);
+}
+
 // ---------------- READY ----------------
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // Existing modules
   registerWelcomeModule(client);
   console.log("✅ Welcome module registered");
 
@@ -104,10 +105,6 @@ client.once("ready", async () => {
     }
   }
 
-  // ✅ Register /servicechange
-  // Guild-scoped registration (instant). Requires config.guildId to be set.
-  // Switch to client.application.commands.create(...) for a global command
-  // (takes up to ~1hr to propagate, but works across all servers).
   try {
     if (config.guildId) {
       const guild = await client.guilds.fetch(config.guildId);
@@ -124,7 +121,6 @@ client.once("ready", async () => {
 // ---------------- INTERACTIONS ----------------
 client.on("interactionCreate", async (interaction) => {
   try {
-    // ✅ /servicechange
     if (interaction.isChatInputCommand?.() && interaction.commandName === "servicechange") {
       return await serviceChangeExecute(interaction);
     }
@@ -133,6 +129,7 @@ client.on("interactionCreate", async (interaction) => {
     await handleOrderHubInteractions(client, interaction);
     // tax handled in tax module
     // packageSystem handles its own interactions internally
+    // payment feature handles its own interactions internally (scoped to "pay:*" customIds)
   } catch (err) {
     console.error("❌ interactionCreate error:", err);
 
@@ -147,7 +144,6 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---------- Process guards ----------
 process.on("unhandledRejection", (reason) => {
   console.error("❌ Unhandled Rejection:", reason);
 });
@@ -155,13 +151,11 @@ process.on("uncaughtException", (err) => {
   console.error("❌ Uncaught Exception:", err);
 });
 
-// ---------------- LOGIN ----------------
 if (!process.env.TOKEN) {
   console.error("❌ Missing TOKEN environment variable (Railway Variables).");
   process.exit(1);
 }
 
-// Package system needs these:
 if (!process.env.CLIENT_ID) console.warn("⚠️ Missing CLIENT_ID env var (slash commands will not register).");
 if (!process.env.BLOXLINK_API_KEY) console.warn("⚠️ Missing BLOXLINK_API_KEY env var (Roblox account linking will fail).");
 
