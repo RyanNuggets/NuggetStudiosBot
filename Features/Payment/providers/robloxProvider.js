@@ -13,6 +13,11 @@
 // docs) or your noblox.js version's own helpers before assuming this file
 // is broken - noblox.js often gets updated for exactly this reason, so
 // wherever it exposes an equivalent helper, prefer swapping to that.
+//
+// GAMEPASS PRICING SPECIFICALLY now goes through Roblox's Open Cloud Game
+// Passes API (see updateGamepassPrice below) using an Open Cloud API key,
+// not the .ROBLOSECURITY cookie - Roblox deprecated the old cookie-based
+// path for this one endpoint.
 
 import noblox from "noblox.js";
 import getConfig from "../config/config.js";
@@ -96,21 +101,38 @@ export async function updateTshirtPrice(newPrice) {
 }
 
 /**
- * Updates the configured gamepass's price. Uses Roblox's Game Passes API
- * directly since noblox.js's gamepass-pricing helper name varies across
- * versions - check your installed version for `updateGamepassPrice` or
- * similar and prefer that if present, it'll be more resilient to Roblox
- * API changes than the raw call below.
+ * Updates the configured gamepass's price.
+ *
+ * Roblox moved this specific endpoint to their Open Cloud "Game Passes v1"
+ * API, scoped per-universe. It no longer accepts the .ROBLOSECURITY cookie
+ * + CSRF flow that still works for other endpoints in this file (e.g. the
+ * economy/transactions call below) - it wants an Open Cloud API key sent
+ * as `x-api-key`, and the body is form-data rather than JSON. Using the old
+ * cookie-based approach here is what caused the 404s.
+ *
+ * The API key needs to be created in the Creator Hub for the experience
+ * that owns the gamepass, scoped to that universe, with Game Passes
+ * read & write access. Set its value in `ROBLOX_OPEN_CLOUD_KEY` (or
+ * whatever `robloxApiKeyEnvVar` points to), and set `universeId` in the
+ * payment config to that experience's universe ID.
  */
 export async function updateGamepassPrice(newPrice) {
-  const { gamepassId } = getConfig();
+  const { gamepassId, universeId, robloxApiKeyEnvVar } = getConfig();
   if (!gamepassId) throw new Error("Missing config.payment.gamepassId");
+  if (!universeId) throw new Error("Missing config.payment.universeId");
 
-  await ensureRobloxLogin();
+  const apiKey = process.env[robloxApiKeyEnvVar];
+  if (!apiKey) throw new Error(`Missing ${robloxApiKeyEnvVar} env var (Roblox Open Cloud API key).`);
 
-  const res = await robloxApiRequest(`https://apis.roblox.com/game-passes/v1/game-passes/${gamepassId}/details`, {
+  const url = `https://apis.roblox.com/game-passes/v1/universes/${universeId}/game-passes/${gamepassId}`;
+
+  const form = new FormData();
+  form.append("price", String(newPrice));
+
+  const res = await fetch(url, {
     method: "PATCH",
-    body: JSON.stringify({ price: newPrice, isForSale: true }),
+    headers: { "x-api-key": apiKey },
+    body: form,
   });
 
   if (!res.ok) {
