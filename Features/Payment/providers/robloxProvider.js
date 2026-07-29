@@ -156,24 +156,31 @@ export function buildTshirtPurchaseLink(tshirtId) {
 // --------- Payment verification ----------
 
 /**
- * Checks whether the bot's account has received a Robux sale from
- * `robloxUserId` for `assetId` (gamepass or t-shirt) at/after `sinceMs`.
+ * Checks whether the Roblox Group that owns the gamepass/t-shirt has
+ * received a Robux sale from `robloxUserId` for `assetId` at/after `sinceMs`.
  *
- * Uses Roblox's transactions endpoint for the receiving account. Requires
- * the bot's Roblox cookie to belong to the account that owns the
- * gamepass/t-shirt (i.e. the one actually receiving the Robux).
+ * Uses Roblox's GROUP transactions endpoint, since the gamepass/t-shirt are
+ * owned by the group, not the bot's personal account - sales pay out to the
+ * group's Robux balance, so checking the bot account's own transactions
+ * would never find them. Requires the bot's Roblox cookie to belong to an
+ * account with permission to view the group's revenue/transactions (e.g.
+ * the group owner, or a role with the "View group payouts"/analytics
+ * permission).
  */
 export async function verifyRobuxPaymentReceived({ assetId, robloxUserId, sinceMs }) {
+  const { groupId } = getConfig();
+  if (!groupId) throw new Error("Missing config.payment.groupId");
+
   await ensureRobloxLogin();
-  const currentUser = await noblox.getCurrentUser();
 
   const res = await robloxApiRequest(
-    `https://economy.roblox.com/v2/users/${currentUser.id}/transactions?transactionType=Sale&limit=100`,
+    `https://economy.roblox.com/v2/groups/${groupId}/transactions?transactionType=Sale&limit=100`,
     { method: "GET" }
   );
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch transactions (${res.status})`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`Failed to fetch transactions (${res.status}): ${body}`);
   }
 
   const data = await res.json();
