@@ -1,6 +1,5 @@
 {
   "guildId": "1015000518889853028",
-
   "dashboard": {
     "dashboardChannelId": "1486640714128298135",
     "ticketCategoryId": "1487614135058305154",
@@ -9,7 +8,6 @@
     "ticketChannelNameFormat": "ticket-{username}",
     "ticketLogsChannelId": "1526910111229022418"
   },
-
   "orderhub": {
     "orderHubChannelId": "1526811970697695362",
     "staffRoleId": "1485623742439620709",
@@ -21,7 +19,6 @@
     "forceUnclaimRoleId": "1485623742439620709",
     "serviceStatus": { "liveries": "open", "graphics": "open" }
   },
-
   "packages": {
     "staffRoleId": "1485624922972622859",
     "forums": {
@@ -30,14 +27,10 @@
       "graphics": "1526738658894544938"
     }
   },
-
   "welcome": {
     "enabled": true,
     "channelId": "1485805832519159858"
-  }
-},
-
-{
+  },
   "payment": {
     "allowedRoleId": "1485623742439620709",
     "bloxlinkApiKey": "14a9a6b3-2872-45af-97e2-e661a3bfc1de",
