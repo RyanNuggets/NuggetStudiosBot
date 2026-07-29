@@ -13,6 +13,7 @@
 //     "gamepassId": 000000000,
 //     "tshirtId": 000000000,
 //     "universeId": 000000000,
+//     "groupId": 000000000,
 //     "robloxCookieEnvVar": "ROBLOX_COOKIE",
 //     "robloxApiKeyEnvVar": "ROBLOX_OPEN_CLOUD_KEY",
 //     "robuxToAed": { "robux": 1000, "aed": 37 },
@@ -79,6 +80,7 @@ function getConfig() {
     gamepassId: payment.gamepassId ?? null,
     tshirtId: payment.tshirtId ?? null,
     universeId: payment.universeId ?? null,
+    groupId: payment.groupId ?? null,
     robloxCookieEnvVar: payment.robloxCookieEnvVar ?? "ROBLOX_COOKIE",
     // Open Cloud API key (NOT the .ROBLOSECURITY cookie) used for the
     // gamepass price update - Roblox moved this endpoint to require an
