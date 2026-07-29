@@ -35,4 +35,30 @@
     "enabled": true,
     "channelId": "1485805832519159858"
   }
+},
+
+{
+  "payment": {
+    "allowedRoleId": "1485623742439620709",
+    "bloxlinkApiKey": "14a9a6b3-2872-45af-97e2-e661a3bfc1de",
+    "gamepassId": 000000000,
+    "tshirtId": 000000000,
+    "robloxCookieEnvVar": "ROBLOX_COOKIE",
+    "robuxToAed": { "robux": 1000, "aed": 37 },
+    "ziina": { "apiKey": "XSpxsa091xiaE6rKE5sT/XOUX5Qafrt+jAIDRdo6qF8/BrsuXEQIbNbZUvHZmpPQ", "testMode": true },
+    "paypal": { "clientId": "...", "clientSecret": "...", "mode": "sandbox" },
+    "exchangeRates": { "provider": "https://open.er-api.com/v6/latest/AED", "cacheMinutes": 30 },
+    "logChannels": {
+      "default": "1531997194536882176",
+      "payments": "1531997194536882176",
+      "errors": "1531997194536882176"
+    },
+    "embedColors": {
+      "default": "#5865F2",
+      "success": "#57F287",
+      "warning": "#FEE75C",
+      "danger": "#ED4245"
+    },
+    "paymentExpiryMinutes": 30
+  }
 }
