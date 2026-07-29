@@ -14,7 +14,7 @@ import { data as serviceChangeData, execute as serviceChangeExecute } from "./Fe
 // ✅ Package system (JSON file store + Bloxlink verified claims)
 import { registerPackageSystem } from "./Features/packageSystem/index.js";
 
-// ✅ Payment system (Robux Gamepass/T-Shirt, Apple/Google Pay via Ziina, Card via PayPal)
+// ✅ Payment system (Robux Gamepass/T-Shirt, Card/Apple Pay/Google Pay via Ziina)
 import registerPaymentModule from "./Features/Payment/index.js";
 
 // --- NODE 18+ CRASH FIX (kept from your secondary test) ---
