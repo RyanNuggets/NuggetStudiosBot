@@ -5,7 +5,7 @@
 export const PaymentStatus = {
   PENDING: "Pending", // session created, method not yet chosen
   AWAITING_VERIFICATION: "Awaiting Verification", // roblox: link generated, waiting on "I've Paid"
-  AWAITING_PAYMENT: "Awaiting Payment", // ziina/paypal: link generated, waiting on confirmation
+  AWAITING_PAYMENT: "Awaiting Payment", // online: link generated, waiting on confirmation
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
   EXPIRED: "Expired",
@@ -15,17 +15,17 @@ export const PaymentStatus = {
 export const PaymentMethod = {
   ROBUX_GAMEPASS: "Robux Gamepass",
   ROBUX_TSHIRT: "Robux T-Shirt",
-  APPLE_PAY: "Apple Pay",
-  GOOGLE_PAY: "Google Pay",
-  CARD: "Credit/Debit Card",
+  // Single grouped option covering Apple Pay, Google Pay, and Credit/Debit
+  // Card - all three are offered on the same hosted checkout page, so the
+  // customer doesn't need to pick between them up front.
+  ONLINE_PAYMENT: "Card / Apple Pay / Google Pay",
 };
 
 // Which methods are "Roblox" methods subject to the single-pending-payment rule.
 export const ROBLOX_METHODS = [PaymentMethod.ROBUX_GAMEPASS, PaymentMethod.ROBUX_TSHIRT];
 
-// Which methods go through Ziina vs PayPal.
-export const ZIINA_METHODS = [PaymentMethod.APPLE_PAY, PaymentMethod.GOOGLE_PAY];
-export const PAYPAL_METHODS = [PaymentMethod.CARD];
+// Which methods go through the online payment provider (currency select -> checkout link -> "I've Paid").
+export const ONLINE_METHODS = [PaymentMethod.ONLINE_PAYMENT];
 
 export const CustomId = {
   METHOD_SELECT: "pay:method", // pay:method:{paymentId}

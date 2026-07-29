@@ -12,16 +12,13 @@
 //     "bloxlinkApiKey": "...",
 //     "gamepassId": 000000000,
 //     "tshirtId": 000000000,
+//     "universeId": 000000000,
 //     "robloxCookieEnvVar": "ROBLOX_COOKIE",
+//     "robloxApiKeyEnvVar": "ROBLOX_OPEN_CLOUD_KEY",
 //     "robuxToAed": { "robux": 1000, "aed": 37 },
 //     "ziina": {
 //       "apiKey": "...",
 //       "testMode": true
-//     },
-//     "paypal": {
-//       "clientId": "...",
-//       "clientSecret": "...",
-//       "mode": "sandbox"
 //     },
 //     "exchangeRates": {
 //       "provider": "https://open.er-api.com/v6/latest/AED",
@@ -81,7 +78,12 @@ function getConfig() {
     guildId: root.guildId ?? payment.guildId ?? null,
     gamepassId: payment.gamepassId ?? null,
     tshirtId: payment.tshirtId ?? null,
+    universeId: payment.universeId ?? null,
     robloxCookieEnvVar: payment.robloxCookieEnvVar ?? "ROBLOX_COOKIE",
+    // Open Cloud API key (NOT the .ROBLOSECURITY cookie) used for the
+    // gamepass price update - Roblox moved this endpoint to require an
+    // Open Cloud key scoped to the game, see providers/robloxProvider.js.
+    robloxApiKeyEnvVar: payment.robloxApiKeyEnvVar ?? "ROBLOX_OPEN_CLOUD_KEY",
 
     // Pricing
     robuxToAed: {
@@ -94,11 +96,6 @@ function getConfig() {
       apiKey: payment.ziina?.apiKey ?? null,
       testMode: payment.ziina?.testMode ?? true,
       baseUrl: payment.ziina?.baseUrl ?? "https://api-v2.ziina.com/api",
-    },
-    paypal: {
-      clientId: payment.paypal?.clientId ?? null,
-      clientSecret: payment.paypal?.clientSecret ?? null,
-      mode: payment.paypal?.mode ?? "sandbox", // "sandbox" | "live"
     },
     exchangeRates: {
       provider: payment.exchangeRates?.provider ?? "https://open.er-api.com/v6/latest/AED",
