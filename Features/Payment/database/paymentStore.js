@@ -124,7 +124,7 @@ export async function markFailed(paymentId) {
 /**
  * Finds an existing *active* Roblox payment (Pending / Awaiting Verification)
  * for this guild, if one exists. Used to enforce the "only one pending
- * Roblox payment at a time" rule. Ziina/PayPal payments are excluded.
+ * Roblox payment at a time" rule. Online (Card/Apple Pay/Google Pay) payments are excluded.
  */
 export function findActiveRobloxPayment(guildId) {
   const db = load();
