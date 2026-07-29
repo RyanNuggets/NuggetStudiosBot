@@ -41,8 +41,8 @@
   "payment": {
     "allowedRoleId": "1485623742439620709",
     "bloxlinkApiKey": "14a9a6b3-2872-45af-97e2-e661a3bfc1de",
-    "gamepassId": 000000000,
-    "tshirtId": 000000000,
+    "gamepassId": 0,
+    "tshirtId": 0,
     "robloxCookieEnvVar": "ROBLOX_COOKIE",
     "robuxToAed": { "robux": 1000, "aed": 37 },
     "ziina": { "apiKey": "XSpxsa091xiaE6rKE5sT/XOUX5Qafrt+jAIDRdo6qF8/BrsuXEQIbNbZUvHZmpPQ", "testMode": true },
