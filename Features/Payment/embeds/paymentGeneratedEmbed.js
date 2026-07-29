@@ -23,8 +23,8 @@ export function buildRobloxPaymentEmbed({ payment }) {
 }
 
 /**
- * For Ziina (Apple Pay / Google Pay) or PayPal (Card) payments: shows the
- * converted amount, currency, and the checkout link.
+ * For the grouped online payment method (Card / Apple Pay / Google Pay):
+ * shows the converted amount, currency, and the checkout link.
  */
 export function buildOnlinePaymentEmbed({ payment }) {
   const { embedColors } = getConfig();

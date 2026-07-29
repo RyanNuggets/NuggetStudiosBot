@@ -29,10 +29,7 @@ export function buildPaymentMethodEmbed({ payment, convertedAmount, currency }) 
     .addFields(
       { name: "🎮 Robux Gamepass", value: robuxDisplay, inline: true },
       { name: "👕 Robux T-Shirt", value: robuxDisplay, inline: true },
-      { name: "\u200b", value: "\u200b", inline: true },
-      { name: "🍎 Apple Pay", value: cashDisplay, inline: true },
-      { name: "🅶 Google Pay", value: cashDisplay, inline: true },
-      { name: "💳 Credit/Debit Card", value: cashDisplay, inline: true }
+      { name: "💳 Card / Apple Pay / Google Pay", value: cashDisplay, inline: true }
     )
     .setFooter({ text: `Displaying prices in ${currency} • Robux amount is fixed for Roblox payments` })
     .setTimestamp();
