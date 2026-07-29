@@ -15,7 +15,7 @@ export function buildPaymentMethodSelect(paymentId) {
       { label: "Robux Gamepass", value: "Robux Gamepass", emoji: "🎮" },
       { label: "Robux T-Shirt", value: "Robux T-Shirt", emoji: "👕" },
       { label: "Apple Pay", value: "Apple Pay", emoji: "🍎" },
-      { label: "Google Pay", value: "Google Pay", emoji: "🅶" },
+      { label: "Google Pay", value: "Google Pay", emoji: "📱" },
       { label: "Credit/Debit Card", value: "Credit/Debit Card", emoji: "💳" }
     );
 
