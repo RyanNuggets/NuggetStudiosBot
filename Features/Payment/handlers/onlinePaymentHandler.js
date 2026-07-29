@@ -94,7 +94,7 @@ export async function handleCurrencySelect(client, interaction) {
 }
 
 export async function handleOnlinePaid(client, interaction) {
-  const paymentId = interaction.customId.split(":")[2];
+  const paymentId = interaction.customId.split(":")[3];
   const payment = getPayment(paymentId);
   if (!payment) {
     return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });

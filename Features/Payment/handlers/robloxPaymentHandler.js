@@ -32,7 +32,7 @@ export function isRobloxPaid(interaction) {
 }
 
 export async function handleRobloxConfirm(client, interaction) {
-  const paymentId = interaction.customId.split(":")[2];
+  const paymentId = interaction.customId.split(":")[3];
   const payment = getPayment(paymentId);
   if (!payment) {
     return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });
@@ -84,7 +84,7 @@ export async function handleRobloxConfirm(client, interaction) {
  * link and shows it again.
  */
 export async function handleRobloxReverify(client, interaction) {
-  const paymentId = interaction.customId.split(":")[2];
+  const paymentId = interaction.customId.split(":")[3];
   const payment = getPayment(paymentId);
   if (!payment) {
     return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });
@@ -123,7 +123,7 @@ export async function handleRobloxReverify(client, interaction) {
 }
 
 export async function handleRobloxPaid(client, interaction) {
-  const paymentId = interaction.customId.split(":")[2];
+  const paymentId = interaction.customId.split(":")[3];
   const payment = getPayment(paymentId);
   if (!payment) {
     return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });
