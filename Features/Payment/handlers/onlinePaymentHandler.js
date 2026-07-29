@@ -1,6 +1,6 @@
 // Features/Payment/handlers/onlinePaymentHandler.js
 import { MessageFlags } from "discord.js";
-import { CustomId, PaymentStatus, ZIINA_METHODS, PAYPAL_METHODS } from "../config/constants.js";
+import { CustomId, PaymentStatus, ONLINE_METHODS } from "../config/constants.js";
 import { getPayment, updatePayment, markCompleted } from "../database/paymentStore.js";
 import { convertFromAed, robuxToAed } from "../utils/pricing.js";
 import {
@@ -8,12 +8,6 @@ import {
   getZiinaPaymentStatus,
   isZiinaSuccessStatus,
 } from "../providers/ziinaProvider.js";
-import {
-  createPaypalOrder,
-  getPaypalOrderStatus,
-  capturePaypalOrder,
-  isPaypalSuccessStatus,
-} from "../providers/paypalProvider.js";
 import { buildOnlinePaymentEmbed } from "../embeds/paymentGeneratedEmbed.js";
 import { buildIvePaidButton } from "../buttons/ivePaidButton.js";
 import { buildPaymentCompleteEmbed } from "../embeds/paymentCompleteEmbed.js";
@@ -42,29 +36,17 @@ export async function handleCurrencySelect(client, interaction) {
     const aedAmount = robuxToAed(payment.robuxAmount);
     const convertedAmount = await convertFromAed(aedAmount, currency);
 
-    let providerPaymentId;
-    let paymentUrl;
-
-    if (ZIINA_METHODS.includes(payment.method)) {
-      const intent = await createZiinaPaymentIntent({
-        amount: convertedAmount,
-        currency,
-        message: `${payment.paymentId} - ${payment.description || "Payment"}`,
-      });
-      providerPaymentId = intent.id;
-      paymentUrl = intent.paymentUrl;
-    } else if (PAYPAL_METHODS.includes(payment.method)) {
-      const order = await createPaypalOrder({
-        amount: convertedAmount,
-        currency,
-        description: payment.description,
-        paymentId: payment.paymentId,
-      });
-      providerPaymentId = order.id;
-      paymentUrl = order.paymentUrl;
-    } else {
+    if (!ONLINE_METHODS.includes(payment.method)) {
       throw new Error(`Method ${payment.method} is not an online payment method.`);
     }
+
+    const intent = await createZiinaPaymentIntent({
+      amount: convertedAmount,
+      currency,
+      message: `${payment.paymentId} - ${payment.description || "Payment"}`,
+    });
+    const providerPaymentId = intent.id;
+    const paymentUrl = intent.paymentUrl;
 
     const updated = await updatePayment(paymentId, {
       currency,
@@ -103,20 +85,8 @@ export async function handleOnlinePaid(client, interaction) {
   await interaction.deferUpdate();
 
   try {
-    let success = false;
-
-    if (ZIINA_METHODS.includes(payment.method)) {
-      const { status } = await getZiinaPaymentStatus(payment.providerPaymentId);
-      success = isZiinaSuccessStatus(status);
-    } else if (PAYPAL_METHODS.includes(payment.method)) {
-      const { status } = await getPaypalOrderStatus(payment.providerPaymentId);
-      if (status === "APPROVED") {
-        const captured = await capturePaypalOrder(payment.providerPaymentId);
-        success = isPaypalSuccessStatus(captured.status);
-      } else {
-        success = isPaypalSuccessStatus(status);
-      }
-    }
+    const { status } = await getZiinaPaymentStatus(payment.providerPaymentId);
+    const success = isZiinaSuccessStatus(status);
 
     if (!success) {
       await interaction.followUp({ embeds: [buildPaymentNotDetectedEmbed()], flags: MessageFlags.Ephemeral });

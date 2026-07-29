@@ -1,6 +1,6 @@
 // Features/Payment/handlers/paymentMethodHandler.js
 import { MessageFlags } from "discord.js";
-import { CustomId, ROBLOX_METHODS, ZIINA_METHODS, PAYPAL_METHODS } from "../config/constants.js";
+import { CustomId, ROBLOX_METHODS, ONLINE_METHODS } from "../config/constants.js";
 import { getPayment, updatePayment, findActiveRobloxPayment } from "../database/paymentStore.js";
 import { getLinkedRobloxId } from "../providers/bloxlinkProvider.js";
 import { getRobloxUserProfile, getRobloxAvatarUrl } from "../providers/robloxProvider.js";
@@ -27,7 +27,7 @@ export async function handlePaymentMethodSelect(client, interaction) {
     return handleRobloxMethodChosen(client, interaction, payment, method);
   }
 
-  if (ZIINA_METHODS.includes(method) || PAYPAL_METHODS.includes(method)) {
+  if (ONLINE_METHODS.includes(method)) {
     await updatePayment(paymentId, { method });
 
     await interaction.update({
