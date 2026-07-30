@@ -23,7 +23,7 @@ export function buildPendingRobloxPaymentEmbed({ existingPayment, jumpLink }) {
         `**Customer:** <@${existingPayment.customerId}>\n` +
         `**Status:** ${existingPayment.status}\n\n` +
         `[Jump to the existing payment](${jumpLink})\n\n` +
-        `That payment must be completed or expired (use \`/forceexpirepayment\`) before another Roblox payment can be created. ` +
+        `That payment must be completed or expired (use \`/payment diagnose\`) before another Roblox payment can be created. ` +
         `This restriction does not apply to Apple Pay, Google Pay, or Card payments.`
     );
 }

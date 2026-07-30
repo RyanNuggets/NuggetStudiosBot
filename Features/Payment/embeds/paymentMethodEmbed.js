@@ -1,36 +1,33 @@
 // Features/Payment/embeds/paymentMethodEmbed.js
 import { EmbedBuilder } from "discord.js";
 import getConfig from "../config/config.js";
-import { formatCurrency, formatRobux } from "../utils/pricing.js";
+import { formatRobux } from "../utils/pricing.js";
 
 /**
- * Builds the "choose your payment method" embed with live-calculated
- * prices for every option, in the given display currency (defaults AED).
+ * Shown after Robux is confirmed on the choice screen - lets the customer
+ * pick Gamepass or T-Shirt. Currency is no longer relevant here since the
+ * Robux amount is fixed and chosen up front (see embeds/choiceEmbeds.js).
  *
  * @param {object} params
  * @param {object} params.payment - the payment record
- * @param {number} params.convertedAmount - the amount in `currency`
- * @param {string} params.currency
  */
-export function buildPaymentMethodEmbed({ payment, convertedAmount, currency }) {
+export function buildPaymentMethodEmbed({ payment }) {
   const { embedColors } = getConfig();
   const robuxDisplay = formatRobux(payment.robuxAmount);
-  const cashDisplay = formatCurrency(convertedAmount, currency);
 
   return new EmbedBuilder()
-    .setTitle("Choose your payment method")
+    .setTitle("Choose your Robux payment type")
     .setColor(embedColors.default)
     .setDescription(
       `**Payment ID:** \`${payment.paymentId}\`\n` +
         `**Customer:** <@${payment.customerId}>\n` +
         (payment.description ? `**Description:** ${payment.description}\n` : "") +
-        `\nSelect how you'd like to pay below. Prices update automatically if you switch currency.`
+        `\nSelect Gamepass or T-Shirt below.`
     )
     .addFields(
       { name: "🎮 Robux Gamepass", value: robuxDisplay, inline: true },
-      { name: "👕 Robux T-Shirt", value: robuxDisplay, inline: true },
-      { name: "💳 Card / Apple Pay / Google Pay", value: cashDisplay, inline: true }
+      { name: "👕 Robux T-Shirt", value: robuxDisplay, inline: true }
     )
-    .setFooter({ text: `Displaying prices in ${currency} • Robux amount is fixed for Roblox payments` })
+    .setFooter({ text: "Paying with Robux • Fixed Robux amount" })
     .setTimestamp();
 }
