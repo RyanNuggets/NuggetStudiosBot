@@ -6,15 +6,26 @@ import { hasAllowedRole } from "../utils/permissions.js";
 
 export const paymentCommandData = {
   name: "payment",
-  description: "Create a new payment session for a customer.",
-  options: [],
+  description: "Payment tools for staff.",
+  options: [
+    {
+      name: "create",
+      description: "Create a new payment session for a customer.",
+      type: 1, // SUB_COMMAND
+    },
+    {
+      name: "diagnose",
+      description: "View open payments, inspect their status/errors, or force-expire one.",
+      type: 1, // SUB_COMMAND
+    },
+  ],
 };
 
 /**
- * Staff runs /payment -> shows the modal (Robux Amount + Description).
+ * Staff runs /payment create -> shows the modal (Robux Amount + Description).
  * The customer is picked in a follow-up step - see modals/paymentModal.js.
  */
-export async function handlePaymentCommand(client, interaction) {
+export async function handlePaymentCreateCommand(client, interaction) {
   const { allowedRoleId } = getConfig();
 
   if (!hasAllowedRole(interaction.member, allowedRoleId)) {
