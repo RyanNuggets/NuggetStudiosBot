@@ -132,17 +132,23 @@ export async function updateGamepassPrice(newPrice) {
  * noblox never picked up. There's no Open Cloud equivalent for this yet
  * (unlike gamepasses), so this calls Roblox's own internal endpoint
  * directly, captured from the network tab on the item's Configure page.
+ * That endpoint only accepts PATCH (a GET on the same path 404s), so there's
+ * no clean way to read the current config back from Roblox first.
  *
  * That endpoint is keyed by a GUID ("collectible item ID"), not the
  * t-shirt's numeric asset ID - it's a different identifier system and
  * doesn't change for a given item, so it's stored once in config
  * (`tshirtCollectibleId`) rather than resolved on every call.
  *
- * The endpoint uses "price floor + amount above floor" rather than a
- * single final price (Roblox's 70%-creator-share marketplace change) - we
- * fetch the current floor first since Roblox controls that value and it
- * can change, then compute the offset needed to hit the target final price.
+ * The endpoint uses "price floor + amount above floor" rather than a single
+ * final price (Roblox's 70%-creator-share marketplace change). For basic
+ * clothing (t-shirts/shirts/pants) the floor is a fixed platform constant
+ * of 1 Robux - not something Roblox varies per item the way it can for
+ * limited/UGC accessories - so it's hardcoded below rather than fetched.
+ * If Roblox ever changes that constant, bump `TSHIRT_PRICE_FLOOR`.
  */
+const TSHIRT_PRICE_FLOOR = 1;
+
 export async function updateTshirtPrice(newFinalPrice) {
   const { tshirtCollectibleId } = getConfig();
   if (!tshirtCollectibleId) throw new Error("Missing config.payment.tshirtCollectibleId");
@@ -151,24 +157,17 @@ export async function updateTshirtPrice(newFinalPrice) {
 
   const url = `https://itemconfiguration.roblox.com/v1/collectibles/${tshirtCollectibleId}`;
 
-  const getRes = await robloxApiRequest(url, { method: "GET" });
-  if (!getRes.ok) {
-    const body = await getRes.text().catch(() => "");
-    throw new Error(`Failed to fetch current t-shirt config (${getRes.status}): ${body}`);
-  }
-  const current = await getRes.json();
-
-  const priceFloor = current.priceInRobux ?? 1;
+  const priceFloor = TSHIRT_PRICE_FLOOR;
   const priceOffset = Math.max(0, newFinalPrice - priceFloor);
 
   const body = {
-    saleLocationConfiguration: current.saleLocationConfiguration ?? { saleLocationType: 1, places: [] },
-    saleStatus: current.saleStatus ?? 0,
-    quantityLimitPerUser: current.quantityLimitPerUser ?? 0,
-    resaleRestriction: current.resaleRestriction ?? 2,
+    saleLocationConfiguration: { saleLocationType: 1, places: [] },
+    saleStatus: 0,
+    quantityLimitPerUser: 0,
+    resaleRestriction: 2,
     priceInRobux: priceFloor,
     priceOffset,
-    optOutFromRegionalPricing: current.optOutFromRegionalPricing ?? true,
+    optOutFromRegionalPricing: true,
     isFree: false,
   };
 
