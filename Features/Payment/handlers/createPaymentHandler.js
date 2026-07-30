@@ -8,10 +8,8 @@ import { buildCustomerSelect } from "../buttons/customerSelectMenu.js";
 import { createDraft, getDraft, deleteDraft } from "../utils/draftStore.js";
 import { createPayment, updatePayment } from "../database/paymentStore.js";
 import { generatePaymentId } from "../utils/ids.js";
-import { buildPaymentMethodEmbed } from "../embeds/paymentMethodEmbed.js";
-import { buildPaymentMethodSelect } from "../buttons/paymentMethodComponents.js";
-import { buildPricingBreakdown } from "../utils/pricing.js";
-import { buildErrorEmbed } from "../embeds/statusEmbeds.js";
+import { buildCurrencyChoiceEmbed } from "../embeds/choiceEmbeds.js";
+import { buildCurrencyChoiceSelect } from "../buttons/currencySelectMenu.js";
 import { logEvent } from "../utils/logger.js";
 import { CustomId } from "../config/constants.js";
 
@@ -56,7 +54,7 @@ export async function handleCustomerSelect(client, interaction) {
 
   if (!draft) {
     return interaction.update({
-      content: "This payment creation session has expired. Please run `/payment` again.",
+      content: "This payment creation session has expired. Please run `/payment create` again.",
       components: [],
     });
   }
@@ -76,22 +74,11 @@ export async function handleCustomerSelect(client, interaction) {
 
   deleteDraft(draftId);
 
-  let pricing;
-  try {
-    pricing = await buildPricingBreakdown(payment.robuxAmount, "AED");
-  } catch (err) {
-    return interaction.update({
-      content: "",
-      embeds: [buildErrorEmbed(`Failed to calculate pricing: ${err.message}`)],
-      components: [],
-    });
-  }
+  const embed = buildCurrencyChoiceEmbed({ payment });
+  const select = buildCurrencyChoiceSelect(payment.paymentId);
 
-  const embed = buildPaymentMethodEmbed({ payment, convertedAmount: pricing.amount, currency: "AED" });
-  const select = buildPaymentMethodSelect(payment.paymentId);
-
-  // Post the interactive payment-method message publicly in the channel so
-  // the customer (not just the staff member who ran /payment) can use it.
+  // Post the interactive payment message publicly in the channel so the
+  // customer (not just the staff member who ran /payment) can use it.
   const publicMessage = await interaction.channel.send({
     content: `<@${customerId}>`,
     embeds: [embed],

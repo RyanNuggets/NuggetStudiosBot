@@ -1,6 +1,6 @@
 // Features/Payment/handlers/onlinePaymentHandler.js
 import { MessageFlags } from "discord.js";
-import { CustomId, PaymentStatus, ONLINE_METHODS } from "../config/constants.js";
+import { CustomId, PaymentMethod, PaymentStatus } from "../config/constants.js";
 import { getPayment, updatePayment, markCompleted } from "../database/paymentStore.js";
 import { convertFromAed, robuxToAed } from "../utils/pricing.js";
 import {
@@ -14,31 +14,33 @@ import { buildPaymentCompleteEmbed } from "../embeds/paymentCompleteEmbed.js";
 import { buildPaymentNotDetectedEmbed, buildErrorEmbed } from "../embeds/statusEmbeds.js";
 import { logEvent, logError } from "../utils/logger.js";
 
-export function isCurrencySelect(interaction) {
-  return interaction.isStringSelectMenu?.() && interaction.customId.startsWith(`${CustomId.CURRENCY_SELECT}:`);
-}
 export function isOnlinePaid(interaction) {
   return interaction.isButton?.() && interaction.customId.startsWith(`${CustomId.ONLINE_PAID}:`);
 }
 
-export async function handleCurrencySelect(client, interaction) {
-  const paymentId = interaction.customId.split(":")[2];
-  const currency = interaction.values[0];
-
+/**
+ * Generates the card / Apple Pay / Google Pay checkout link for a payment
+ * and edits the message in place. Called from the currency choice-confirm
+ * step (see handlers/paymentChoiceHandler.js) once the currency has been
+ * confirmed - by this point `interaction` has already been deferred.
+ *
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Interaction} interaction - deferred component interaction
+ * @param {string} paymentId
+ * @param {"AED"|"USD"|"EUR"|"GBP"} currency
+ */
+export async function generateOnlinePaymentLink(client, interaction, paymentId, currency) {
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });
+    await interaction
+      .followUp({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral })
+      .catch(() => {});
+    return;
   }
-
-  await interaction.deferUpdate();
 
   try {
     const aedAmount = robuxToAed(payment.robuxAmount);
     const convertedAmount = await convertFromAed(aedAmount, currency);
-
-    if (!ONLINE_METHODS.includes(payment.method)) {
-      throw new Error(`Method ${payment.method} is not an online payment method.`);
-    }
 
     const intent = await createZiinaPaymentIntent({
       amount: convertedAmount,
@@ -49,6 +51,7 @@ export async function handleCurrencySelect(client, interaction) {
     const paymentUrl = intent.paymentUrl;
 
     const updated = await updatePayment(paymentId, {
+      method: PaymentMethod.ONLINE_PAYMENT,
       currency,
       convertedAmount,
       providerPaymentId,
@@ -64,14 +67,16 @@ export async function handleCurrencySelect(client, interaction) {
     await logEvent(
       client,
       "🔗 Online Payment Generated",
-      `**Payment ID:** \`${paymentId}\`\n**Method:** ${payment.method}\n**Amount:** ${convertedAmount} ${currency}`
+      `**Payment ID:** \`${paymentId}\`\n**Method:** ${updated.method}\n**Amount:** ${convertedAmount} ${currency}`
     );
   } catch (err) {
     await logError(client, `Failed to generate online payment (${paymentId})`, err);
-    await interaction.followUp({
-      embeds: [buildErrorEmbed(`Failed to generate the payment link: ${err.message}`)],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction
+      .followUp({
+        embeds: [buildErrorEmbed(`Failed to generate the payment link: ${err.message}`)],
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
   }
 }
 

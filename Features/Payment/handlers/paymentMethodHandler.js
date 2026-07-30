@@ -1,13 +1,15 @@
 // Features/Payment/handlers/paymentMethodHandler.js
+//
+// Only ever reached via the Robux path (see handlers/paymentChoiceHandler.js)
+// since currency/online routing now happens earlier, on the choice screen.
 import { MessageFlags } from "discord.js";
-import { CustomId, ROBLOX_METHODS, ONLINE_METHODS } from "../config/constants.js";
+import { CustomId } from "../config/constants.js";
 import { getPayment, updatePayment, findActiveRobloxPayment } from "../database/paymentStore.js";
 import { getLinkedRobloxId } from "../providers/bloxlinkProvider.js";
 import { getRobloxUserProfile, getRobloxAvatarUrl } from "../providers/robloxProvider.js";
 import { buildRobloxConfirmEmbed } from "../embeds/robloxConfirmEmbed.js";
 import { buildRobloxConfirmButtons } from "../buttons/robloxConfirmButtons.js";
-import { buildCurrencySelect } from "../buttons/currencySelectMenu.js";
-import { buildPendingRobloxPaymentEmbed, buildErrorEmbed } from "../embeds/statusEmbeds.js";
+import { buildPendingRobloxPaymentEmbed } from "../embeds/statusEmbeds.js";
 import { logEvent } from "../utils/logger.js";
 
 export function isPaymentMethodSelect(interaction) {
@@ -23,28 +25,13 @@ export async function handlePaymentMethodSelect(client, interaction) {
     return interaction.reply({ content: "This payment session no longer exists.", flags: MessageFlags.Ephemeral });
   }
 
-  if (ROBLOX_METHODS.includes(method)) {
-    return handleRobloxMethodChosen(client, interaction, payment, method);
-  }
-
-  if (ONLINE_METHODS.includes(method)) {
-    await updatePayment(paymentId, { method });
-
-    await interaction.update({
-      content: `**${method}** selected for payment \`${paymentId}\`. Choose your currency below.`,
-      embeds: interaction.message.embeds,
-      components: [buildCurrencySelect(paymentId)],
-    });
-
-    await logEvent(client, "💳 Payment Method Selected", `**Payment ID:** \`${paymentId}\`\n**Method:** ${method}`);
-    return;
-  }
-
-  return interaction.reply({ content: `Unknown payment method: ${method}`, flags: MessageFlags.Ephemeral });
+  return handleRobloxMethodChosen(client, interaction, payment, method);
 }
 
 async function handleRobloxMethodChosen(client, interaction, payment, method) {
-  // Enforce: only one pending Roblox payment at a time.
+  // Enforce: only one pending Roblox payment at a time. (Also checked
+  // earlier when Robux was confirmed on the choice screen - this is a
+  // defensive re-check in case another payment slipped in between.)
   const active = findActiveRobloxPayment(payment.guildId);
   if (active && active.paymentId !== payment.paymentId) {
     const jumpLink = `https://discord.com/channels/${payment.guildId}/${active.channelId}/${active.messageId}`;
