@@ -81,26 +81,6 @@ export async function getRobloxAvatarUrl(robloxUserId) {
 // --------- Pricing updates ----------
 
 /**
- * Updates the configured t-shirt's price using noblox.js (matches the
- * bot's existing shirt-price command).
- */
-export async function updateTshirtPrice(newPrice) {
-  const { tshirtId } = getConfig();
-  if (!tshirtId) throw new Error("Missing config.payment.tshirtId");
-
-  await ensureRobloxLogin();
-
-  const infoBefore = await noblox.getProductInfo(tshirtId);
-  const name = infoBefore?.Name ?? infoBefore?.name ?? "Untitled";
-  const description = infoBefore?.Description ?? infoBefore?.description ?? "";
-
-  await noblox.configureItem(tshirtId, name, description, undefined, newPrice, undefined);
-
-  const infoAfter = await noblox.getProductInfo(tshirtId);
-  return { assetId: tshirtId, name, before: infoBefore?.PriceInRobux ?? null, after: infoAfter?.PriceInRobux ?? null };
-}
-
-/**
  * Updates the configured gamepass's price.
  *
  * Roblox moved this specific endpoint to their Open Cloud "Game Passes v1"
@@ -141,6 +121,65 @@ export async function updateGamepassPrice(newPrice) {
   }
 
   return { gamepassId, after: newPrice };
+}
+
+/**
+ * Updates the configured t-shirt's price.
+ *
+ * noblox.js's `configureItem()` is broken against current Roblox behavior
+ * (see https://github.com/noblox/noblox.js/issues/836) - Roblox folded
+ * clothing into their newer "collectibles" configuration system, which
+ * noblox never picked up. There's no Open Cloud equivalent for this yet
+ * (unlike gamepasses), so this calls Roblox's own internal endpoint
+ * directly, captured from the network tab on the item's Configure page.
+ *
+ * That endpoint is keyed by a GUID ("collectible item ID"), not the
+ * t-shirt's numeric asset ID - it's a different identifier system and
+ * doesn't change for a given item, so it's stored once in config
+ * (`tshirtCollectibleId`) rather than resolved on every call.
+ *
+ * The endpoint uses "price floor + amount above floor" rather than a
+ * single final price (Roblox's 70%-creator-share marketplace change) - we
+ * fetch the current floor first since Roblox controls that value and it
+ * can change, then compute the offset needed to hit the target final price.
+ */
+export async function updateTshirtPrice(newFinalPrice) {
+  const { tshirtCollectibleId } = getConfig();
+  if (!tshirtCollectibleId) throw new Error("Missing config.payment.tshirtCollectibleId");
+
+  await ensureRobloxLogin();
+
+  const url = `https://itemconfiguration.roblox.com/v1/collectibles/${tshirtCollectibleId}`;
+
+  const getRes = await robloxApiRequest(url, { method: "GET" });
+  if (!getRes.ok) {
+    const body = await getRes.text().catch(() => "");
+    throw new Error(`Failed to fetch current t-shirt config (${getRes.status}): ${body}`);
+  }
+  const current = await getRes.json();
+
+  const priceFloor = current.priceInRobux ?? 1;
+  const priceOffset = Math.max(0, newFinalPrice - priceFloor);
+
+  const body = {
+    saleLocationConfiguration: current.saleLocationConfiguration ?? { saleLocationType: 1, places: [] },
+    saleStatus: current.saleStatus ?? 0,
+    quantityLimitPerUser: current.quantityLimitPerUser ?? 0,
+    resaleRestriction: current.resaleRestriction ?? 2,
+    priceInRobux: priceFloor,
+    priceOffset,
+    optOutFromRegionalPricing: current.optOutFromRegionalPricing ?? true,
+    isFree: false,
+  };
+
+  const patchRes = await robloxApiRequest(url, { method: "PATCH", body: JSON.stringify(body) });
+
+  if (!patchRes.ok) {
+    const errBody = await patchRes.text().catch(() => "");
+    throw new Error(`Failed to update t-shirt price (${patchRes.status}): ${errBody}`);
+  }
+
+  return { tshirtCollectibleId, priceFloor, priceOffset, after: priceFloor + priceOffset };
 }
 
 // --------- Purchase links ----------
