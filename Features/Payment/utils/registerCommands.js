@@ -21,6 +21,26 @@ async function upsertGlobalCommand(client, command) {
   return "created";
 }
 
+/**
+ * Deletes a stale global command by name if it exists. Discord does NOT
+ * auto-remove a command just because your bot stopped upserting it (e.g.
+ * after /forceexpirepayment was folded into /payment diagnose) - it just
+ * sits there, still visible/usable, until explicitly deleted. Safe to call
+ * every startup: no-ops once the command is actually gone.
+ */
+export async function deleteStaleGlobalCommand(client, name) {
+  const appId = client.application?.id;
+  if (!appId) throw new Error("Missing application id.");
+
+  const existing = await client.rest.get(Routes.applicationCommands(appId));
+  const found = Array.isArray(existing) ? existing.find((c) => c?.name === name) : null;
+  if (!found?.id) return false;
+
+  await client.rest.delete(Routes.applicationCommand(appId, found.id));
+  console.log(`🗑️ [PAYMENT] Removed stale global slash command: /${name}`);
+  return true;
+}
+
 export async function registerPaymentCommands(client, commands) {
   for (const command of commands) {
     const result = await upsertGlobalCommand(client, command);
