@@ -17,7 +17,7 @@
 // See README.md for full setup (config.json keys, env vars, dependencies).
 
 import { paymentCommandData } from "./commands/payment.js";
-import { registerPaymentCommands } from "./utils/registerCommands.js";
+import { registerPaymentCommands, deleteStaleGlobalCommand } from "./utils/registerCommands.js";
 import { setupPaymentInteractionRouter } from "./handlers/interactionRouter.js";
 import { startExpirySweep } from "./handlers/expirySweep.js";
 
@@ -25,6 +25,14 @@ export default function registerPaymentModule(client) {
   client.once("ready", async () => {
     try {
       await registerPaymentCommands(client, [paymentCommandData]);
+
+      // One-time cleanup: /forceexpirepayment was folded into /payment
+      // diagnose and is no longer upserted above, but Discord doesn't drop
+      // a global command just because you stop registering it - it has to
+      // be explicitly deleted. Safe to leave this in permanently; it's a
+      // no-op once the command is actually gone.
+      await deleteStaleGlobalCommand(client, "forceexpirepayment");
+
       startExpirySweep(client);
       console.log("✅ Payment module registered");
     } catch (err) {
