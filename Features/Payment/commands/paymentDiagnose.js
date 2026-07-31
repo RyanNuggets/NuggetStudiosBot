@@ -118,13 +118,25 @@ export function isDiagnoseBack(interaction) {
 }
 
 export async function handleDiagnoseSelect(client, interaction) {
+  const { allowedRoleId } = getConfig();
+  if (!hasAllowedRole(interaction.member, allowedRoleId)) {
+    return interaction.reply({ content: "You don't have permission to do that.", flags: MessageFlags.Ephemeral });
+  }
+
   const paymentId = interaction.customId.split(":")[3];
-  return renderDiagnoseView(client, interaction, paymentId);
+  await interaction.deferUpdate(); // ack immediately - the diagnostics checks below hit live APIs
+  return renderDiagnoseView(interaction, paymentId);
 }
 
 export async function handleDiagnoseRefresh(client, interaction) {
+  const { allowedRoleId } = getConfig();
+  if (!hasAllowedRole(interaction.member, allowedRoleId)) {
+    return interaction.reply({ content: "You don't have permission to do that.", flags: MessageFlags.Ephemeral });
+  }
+
   const paymentId = interaction.customId.split(":")[3];
-  return renderDiagnoseView(client, interaction, paymentId);
+  await interaction.deferUpdate();
+  return renderDiagnoseView(interaction, paymentId);
 }
 
 export async function handleDiagnoseBack(client, interaction) {
@@ -142,18 +154,17 @@ export async function handleDiagnoseBack(client, interaction) {
   });
 }
 
-async function renderDiagnoseView(client, interaction, paymentId) {
-  const { allowedRoleId } = getConfig();
-  if (!hasAllowedRole(interaction.member, allowedRoleId)) {
-    return interaction.reply({ content: "You don't have permission to do that.", flags: MessageFlags.Ephemeral });
-  }
-
+/**
+ * Pure render step - assumes the interaction has ALREADY been acknowledged
+ * (deferUpdate) by the caller. Never defers/acks itself, so it's safe to
+ * call from multiple places (select, refresh, after force-expiring) without
+ * risking a double-ack or an ack that comes too late.
+ */
+async function renderDiagnoseView(interaction, paymentId) {
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.update({ content: "That payment no longer exists.", embeds: [], components: [] });
+    return interaction.editReply({ content: "That payment no longer exists.", embeds: [], components: [] });
   }
-
-  await interaction.deferUpdate();
 
   const diagnostics = await runDiagnostics(payment);
 
@@ -331,9 +342,16 @@ export async function handleDiagnoseForceExpireConfirm(client, interaction) {
   }
 
   const paymentId = interaction.customId.split(":")[4];
+
+  // Ack immediately - markExpired/logEvent/diagnostics below all do I/O
+  // (file writes, a Discord message send, live API checks) that can easily
+  // add up past Discord's 3s interaction window if we wait to ack until
+  // after they're done.
+  await interaction.deferUpdate();
+
   const updated = await markExpired(paymentId);
   if (!updated) {
-    return interaction.update({ content: "That payment no longer exists.", embeds: [], components: [] });
+    return interaction.editReply({ content: "That payment no longer exists.", embeds: [], components: [] });
   }
 
   await logEvent(
@@ -342,10 +360,11 @@ export async function handleDiagnoseForceExpireConfirm(client, interaction) {
     `**Payment ID:** \`${paymentId}\`\n**By:** <@${interaction.user.id}>`
   );
 
-  return renderDiagnoseView(client, interaction, paymentId);
+  return renderDiagnoseView(interaction, paymentId);
 }
 
 export async function handleDiagnoseForceExpireCancel(client, interaction) {
   const paymentId = interaction.customId.split(":")[4];
-  return renderDiagnoseView(client, interaction, paymentId);
+  await interaction.deferUpdate();
+  return renderDiagnoseView(interaction, paymentId);
 }
