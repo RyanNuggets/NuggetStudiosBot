@@ -62,6 +62,10 @@ export async function handleCustomerSelect(client, interaction) {
   const customerId = interaction.values[0];
   const paymentId = generatePaymentId();
 
+  // Ack immediately - creating the payment record and posting the public
+  // message below both do I/O that can add up past Discord's 3s window.
+  await interaction.deferUpdate();
+
   const payment = await createPayment({
     paymentId,
     customerId,
@@ -87,7 +91,7 @@ export async function handleCustomerSelect(client, interaction) {
 
   await updatePaymentMessageId(payment.paymentId, publicMessage.id);
 
-  await interaction.update({
+  await interaction.editReply({
     content: `✅ Payment session \`${payment.paymentId}\` created for <@${customerId}>. See the message below.`,
     components: [],
   });
