@@ -2,9 +2,10 @@
 //
 // The very first step after a customer is picked for a payment: choose
 // Robux (Gamepass/T-Shirt) or a real-world currency (Card / Apple Pay /
-// Google Pay), then confirm that choice before anything is generated.
+// Google Pay), then confirm that choice, then agree to the service
+// agreement, before anything is actually generated.
 //
-//   choice select -> confirm/back screen -> (Robux: method select) | (currency: link generated)
+//   choice select -> confirm/back -> service agreement -> (Robux: method select) | (currency: link generated)
 
 import { MessageFlags } from "discord.js";
 import { CustomId } from "../config/constants.js";
@@ -12,12 +13,7 @@ import { getPayment, updatePayment, findActiveRobloxPayment } from "../database/
 import { buildCurrencyChoiceSelect } from "../buttons/currencySelectMenu.js";
 import { buildChoiceConfirmButtons } from "../buttons/choiceConfirmButtons.js";
 import { buildTosAgreementButtons } from "../buttons/tosAgreementButtons.js";
-import {
-  buildCurrencyChoiceEmbed,
-  buildRobuxChoiceConfirmEmbed,
-  buildCurrencyChoiceConfirmEmbed,
-  buildTosAgreementEmbed,
-} from "../embeds/choiceEmbeds.js";
+import { buildCurrencyChoiceEmbed, buildChoiceConfirmEmbed, buildTosAgreementEmbed } from "../embeds/choiceEmbeds.js";
 import { buildPaymentMethodEmbed } from "../embeds/paymentMethodEmbed.js";
 import { buildPaymentMethodSelect } from "../buttons/paymentMethodComponents.js";
 import { buildPendingRobloxPaymentEmbed, buildErrorEmbed } from "../embeds/statusEmbeds.js";
@@ -38,32 +34,32 @@ export function isTosAgree(interaction) {
   return interaction.isButton?.() && interaction.customId.startsWith(`${CustomId.TOS_AGREE}:`);
 }
 
+function componentsV2(container, extraFlags = 0) {
+  return { flags: MessageFlags.IsComponentsV2 | extraFlags, components: [container] };
+}
+
 export async function handleChoiceSelect(client, interaction) {
   const paymentId = interaction.customId.split(":")[3];
   const value = interaction.values[0]; // "ROBUX" or a currency code
 
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.update({ content: "This payment session no longer exists.", embeds: [], components: [] });
+    return interaction.update({ content: "This payment session no longer exists.", components: [] });
   }
 
   if (value === "ROBUX") {
-    return interaction.update({
-      content: null,
-      embeds: [buildRobuxChoiceConfirmEmbed({ payment })],
-      components: [buildChoiceConfirmButtons(paymentId, value)],
-    });
+    const buttons = buildChoiceConfirmButtons(paymentId, value);
+    const container = buildChoiceConfirmEmbed({ payment, value, actionRow: buttons });
+    return interaction.update(componentsV2(container));
   }
 
   // Currency path - preview the converted amount before confirming.
   await interaction.deferUpdate();
   try {
     const pricing = await buildPricingBreakdown(payment.robuxAmount, value);
-    await interaction.message.edit({
-      content: null,
-      embeds: [buildCurrencyChoiceConfirmEmbed({ payment, currency: value, convertedAmount: pricing.amount })],
-      components: [buildChoiceConfirmButtons(paymentId, value)],
-    });
+    const buttons = buildChoiceConfirmButtons(paymentId, value);
+    const container = buildChoiceConfirmEmbed({ payment, value, convertedAmount: pricing.amount, actionRow: buttons });
+    await interaction.message.edit(componentsV2(container));
   } catch (err) {
     await interaction.followUp({
       embeds: [buildErrorEmbed(`Failed to calculate pricing: ${err.message}`)],
@@ -76,14 +72,12 @@ export async function handleChoiceBack(client, interaction) {
   const paymentId = interaction.customId.split(":")[3];
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.update({ content: "This payment session no longer exists.", embeds: [], components: [] });
+    return interaction.update({ content: "This payment session no longer exists.", components: [] });
   }
 
-  await interaction.update({
-    content: null,
-    embeds: [buildCurrencyChoiceEmbed({ payment })],
-    components: [buildCurrencyChoiceSelect(paymentId)],
-  });
+  const select = buildCurrencyChoiceSelect(paymentId);
+  const container = buildCurrencyChoiceEmbed({ payment, actionRow: select });
+  await interaction.update(componentsV2(container));
 }
 
 export async function handleChoiceConfirm(client, interaction) {
@@ -93,16 +87,14 @@ export async function handleChoiceConfirm(client, interaction) {
 
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.update({ content: "This payment session no longer exists.", embeds: [], components: [] });
+    return interaction.update({ content: "This payment session no longer exists.", components: [] });
   }
 
   // Require agreeing to the service agreement before anything is actually
   // generated - applies to both the Robux and currency paths.
-  await interaction.update({
-    content: null,
-    embeds: [buildTosAgreementEmbed({ payment, value })],
-    components: [buildTosAgreementButtons(paymentId, value)],
-  });
+  const buttons = buildTosAgreementButtons(paymentId, value);
+  const container = buildTosAgreementEmbed({ payment, actionRow: buttons });
+  await interaction.update(componentsV2(container));
 }
 
 export async function handleTosAgree(client, interaction) {
@@ -112,7 +104,7 @@ export async function handleTosAgree(client, interaction) {
 
   const payment = getPayment(paymentId);
   if (!payment) {
-    return interaction.update({ content: "This payment session no longer exists.", embeds: [], components: [] });
+    return interaction.update({ content: "This payment session no longer exists.", components: [] });
   }
 
   await updatePayment(paymentId, { tosAgreedAt: Date.now() });
@@ -122,17 +114,13 @@ export async function handleTosAgree(client, interaction) {
     const active = findActiveRobloxPayment(payment.guildId);
     if (active && active.paymentId !== payment.paymentId) {
       const jumpLink = `https://discord.com/channels/${payment.guildId}/${active.channelId}/${active.messageId}`;
-      return interaction.reply({
-        embeds: [buildPendingRobloxPaymentEmbed({ existingPayment: active, jumpLink })],
-        flags: MessageFlags.Ephemeral,
-      });
+      const container = buildPendingRobloxPaymentEmbed({ existingPayment: active, jumpLink });
+      return interaction.reply(componentsV2(container, MessageFlags.Ephemeral));
     }
 
-    await interaction.update({
-      content: null,
-      embeds: [buildPaymentMethodEmbed({ payment })],
-      components: [buildPaymentMethodSelect(paymentId)],
-    });
+    const select = buildPaymentMethodSelect(paymentId);
+    const container = buildPaymentMethodEmbed({ payment, actionRow: select });
+    await interaction.update(componentsV2(container));
 
     await logEvent(client, "🎮 Robux Path Chosen", `**Payment ID:** \`${paymentId}\``);
     return;

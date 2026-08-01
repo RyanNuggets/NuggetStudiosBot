@@ -57,10 +57,9 @@ export async function handleRobloxConfirm(client, interaction) {
       status: PaymentStatus.AWAITING_VERIFICATION,
     });
 
-    const embed = buildRobloxPaymentEmbed({ payment: updated });
-    const button = buildIvePaidButton(paymentId, "roblox");
+    const embed = buildRobloxPaymentEmbed({ payment: updated, actionRow: buildIvePaidButton(paymentId, "roblox") });
 
-    await interaction.message.edit({ embeds: [embed], components: [button] });
+    await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [embed] });
 
     await logEvent(
       client,
@@ -110,10 +109,10 @@ export async function handleRobloxReverify(client, interaction) {
     robloxAvatarUrl: avatarUrl,
   });
 
-  const embed = buildRobloxConfirmEmbed({ payment: updated });
   const buttons = buildRobloxConfirmButtons(paymentId);
+  const container = buildRobloxConfirmEmbed({ payment: updated, actionRow: buttons });
 
-  await interaction.message.edit({ embeds: [embed], components: [buttons] });
+  await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [container] });
 
   await logEvent(
     client,
@@ -142,14 +141,17 @@ export async function handleRobloxPaid(client, interaction) {
     });
 
     if (!received) {
-      await interaction.followUp({ embeds: [buildPaymentNotDetectedEmbed()], flags: MessageFlags.Ephemeral });
+      await interaction.followUp({
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+        components: [buildPaymentNotDetectedEmbed()],
+      });
       return;
     }
 
     const completed = await markCompleted(paymentId);
-    const embed = buildPaymentCompleteEmbed({ payment: completed, staffId: completed.staffId });
+    const container = buildPaymentCompleteEmbed({ payment: completed, staffId: completed.staffId });
 
-    await interaction.message.edit({ embeds: [embed], components: [] });
+    await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [container] });
 
     await logEvent(
       client,

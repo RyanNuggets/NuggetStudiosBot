@@ -4,8 +4,9 @@
 // so customers/staff aren't left looking at a stale "pay now" button.
 
 import getConfig from "../config/config.js";
+import { MessageFlags } from "discord.js";
 import { listActivePayments, markExpired } from "../database/paymentStore.js";
-import { buildWarningEmbed } from "../embeds/statusEmbeds.js";
+import { buildPaymentExpiredEmbed } from "../embeds/statusEmbeds.js";
 import { logEvent } from "../utils/logger.js";
 
 const SWEEP_INTERVAL_MS = 60 * 1000;
@@ -34,8 +35,8 @@ async function sweep(client) {
           const channel = await client.channels.fetch(payment.channelId);
           const message = await channel.messages.fetch(payment.messageId);
           await message.edit({
-            embeds: [buildWarningEmbed("⏱️ Payment Expired", `Payment \`${payment.paymentId}\` expired after ${paymentExpiryMinutes} minutes of inactivity.`)],
-            components: [],
+            flags: MessageFlags.IsComponentsV2,
+            components: [buildPaymentExpiredEmbed({ payment, minutes: paymentExpiryMinutes })],
           });
         } catch {
           // Message may have been deleted - nothing more to do.

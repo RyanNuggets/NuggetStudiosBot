@@ -92,15 +92,18 @@ export async function handleCustomerSelect(client, interaction) {
 
   deleteDraft(draftId);
 
-  const embed = buildCurrencyChoiceEmbed({ payment });
   const select = buildCurrencyChoiceSelect(payment.paymentId);
+  const container = buildCurrencyChoiceEmbed({ payment, actionRow: select });
 
   // Post the interactive payment message publicly in the channel so the
   // customer (not just the staff member who ran /payment) can use it.
+  // Components V2 messages can't carry a top-level `content` (that's how
+  // the customer ping used to be attached), so the ping is a small plain
+  // message sent right before the container.
+  await interaction.channel.send({ content: `<@${customerId}>` });
   const publicMessage = await interaction.channel.send({
-    content: `<@${customerId}>`,
-    embeds: [embed],
-    components: [select],
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
   });
 
   await updatePaymentMessageId(payment.paymentId, publicMessage.id);

@@ -35,9 +35,10 @@ async function handleRobloxMethodChosen(client, interaction, payment, method) {
   const active = findActiveRobloxPayment(payment.guildId);
   if (active && active.paymentId !== payment.paymentId) {
     const jumpLink = `https://discord.com/channels/${payment.guildId}/${active.channelId}/${active.messageId}`;
+    const container = buildPendingRobloxPaymentEmbed({ existingPayment: active, jumpLink });
     return interaction.reply({
-      embeds: [buildPendingRobloxPaymentEmbed({ existingPayment: active, jumpLink })],
-      flags: MessageFlags.Ephemeral,
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      components: [container],
     });
   }
 
@@ -63,10 +64,10 @@ async function handleRobloxMethodChosen(client, interaction, payment, method) {
     robloxAvatarUrl: avatarUrl,
   });
 
-  const embed = buildRobloxConfirmEmbed({ payment: updated });
   const buttons = buildRobloxConfirmButtons(updated.paymentId);
+  const container = buildRobloxConfirmEmbed({ payment: updated, actionRow: buttons });
 
-  await interaction.message.edit({ embeds: [embed], components: [buttons] });
+  await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [container] });
 
   await logEvent(
     client,

@@ -59,10 +59,9 @@ export async function generateOnlinePaymentLink(client, interaction, paymentId, 
       status: PaymentStatus.AWAITING_PAYMENT,
     });
 
-    const embed = buildOnlinePaymentEmbed({ payment: updated });
-    const button = buildIvePaidButton(paymentId, "online");
+    const embed = buildOnlinePaymentEmbed({ payment: updated, actionRow: buildIvePaidButton(paymentId, "online") });
 
-    await interaction.message.edit({ content: null, embeds: [embed], components: [button] });
+    await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [embed] });
 
     await logEvent(
       client,
@@ -94,14 +93,17 @@ export async function handleOnlinePaid(client, interaction) {
     const success = isZiinaSuccessStatus(status);
 
     if (!success) {
-      await interaction.followUp({ embeds: [buildPaymentNotDetectedEmbed()], flags: MessageFlags.Ephemeral });
+      await interaction.followUp({
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+        components: [buildPaymentNotDetectedEmbed()],
+      });
       return;
     }
 
     const completed = await markCompleted(paymentId);
-    const embed = buildPaymentCompleteEmbed({ payment: completed, staffId: completed.staffId });
+    const container = buildPaymentCompleteEmbed({ payment: completed, staffId: completed.staffId });
 
-    await interaction.message.edit({ embeds: [embed], components: [] });
+    await interaction.message.edit({ flags: MessageFlags.IsComponentsV2, components: [container] });
 
     await logEvent(
       client,
