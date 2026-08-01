@@ -69,6 +69,42 @@ export function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Converts an AED amount back to an equivalent Robux amount - the inverse
+ * of robuxToAed. Robux is always a whole number.
+ */
+export function aedToRobux(aedAmount) {
+  const { robux, aed } = getConfig().robuxToAed;
+  return Math.round((aedAmount / aed) * robux);
+}
+
+/**
+ * Converts an amount in any supported currency into AED using live
+ * exchange rates - the inverse of convertFromAed.
+ * @param {number} amount
+ * @param {"AED"|"USD"|"EUR"|"GBP"} fromCurrency
+ */
+export async function convertToAed(amount, fromCurrency) {
+  if (fromCurrency === "AED") return round2(amount);
+
+  const rates = await getExchangeRates(); // base = AED
+  const rate = rates[fromCurrency];
+  if (!rate) {
+    throw new Error(`No exchange rate available for ${fromCurrency}`);
+  }
+  return round2(amount / rate);
+}
+
+/**
+ * Convenience: an amount in any supported currency -> equivalent Robux, in
+ * one call. Used when staff enters a real-world price instead of a Robux
+ * amount when creating a payment (see modals/paymentModal.js).
+ */
+export async function currencyToRobux(amount, fromCurrency) {
+  const aed = await convertToAed(amount, fromCurrency);
+  return aedToRobux(aed);
+}
+
 export function formatCurrency(amount, currency) {
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
