@@ -42,6 +42,8 @@ import {
   handleChoiceConfirm,
   isChoiceBack,
   handleChoiceBack,
+  isTosAgree,
+  handleTosAgree,
 } from "./paymentChoiceHandler.js";
 import { isPaymentMethodSelect, handlePaymentMethodSelect } from "./paymentMethodHandler.js";
 import {
@@ -101,6 +103,10 @@ export function setupPaymentInteractionRouter(client) {
       }
       if (isChoiceBack(interaction)) {
         await handleChoiceBack(client, interaction);
+        return;
+      }
+      if (isTosAgree(interaction)) {
+        await handleTosAgree(client, interaction);
         return;
       }
 

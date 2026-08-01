@@ -8,8 +8,10 @@ import { buildCustomerSelect } from "../buttons/customerSelectMenu.js";
 import { createDraft, getDraft, deleteDraft } from "../utils/draftStore.js";
 import { createPayment, updatePayment } from "../database/paymentStore.js";
 import { generatePaymentId } from "../utils/ids.js";
+import { currencyToRobux } from "../utils/pricing.js";
 import { buildCurrencyChoiceEmbed } from "../embeds/choiceEmbeds.js";
 import { buildCurrencyChoiceSelect } from "../buttons/currencySelectMenu.js";
+import { buildErrorEmbed } from "../embeds/statusEmbeds.js";
 import { logEvent } from "../utils/logger.js";
 import { CustomId } from "../config/constants.js";
 
@@ -23,24 +25,37 @@ export async function handlePaymentModalSubmit(client, interaction) {
     return interaction.reply({ content: parsed.error, flags: MessageFlags.Ephemeral });
   }
 
+  // Ack immediately - if a USD amount was entered it needs a live exchange
+  // rate lookup below before we know the equivalent Robux amount.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let robuxAmount = parsed.robuxAmount;
+  if (robuxAmount == null) {
+    try {
+      robuxAmount = await currencyToRobux(parsed.usdAmount, "USD");
+    } catch (err) {
+      await interaction.editReply({ embeds: [buildErrorEmbed(`Failed to convert USD to Robux: ${err.message}`)] });
+      return;
+    }
+  }
+
   const draftId = createDraft({
-    robuxAmount: parsed.robuxAmount,
-    description: parsed.description,
+    robuxAmount,
     staffId: interaction.user.id,
     guildId: interaction.guildId,
     channelId: interaction.channelId,
   });
 
-  await interaction.reply({
+  await interaction.editReply({
     content: "Who is this payment for?",
     components: [buildCustomerSelect(draftId)],
-    flags: MessageFlags.Ephemeral,
   });
 
   await logEvent(
     client,
     "🧾 /payment used",
-    `**By:** <@${interaction.user.id}>\n**Robux Amount:** ${parsed.robuxAmount}`
+    `**By:** <@${interaction.user.id}>\n**Robux Amount:** ${robuxAmount}` +
+      (parsed.usdAmount != null ? ` (entered as $${parsed.usdAmount})` : "")
   );
 }
 
@@ -70,7 +85,6 @@ export async function handleCustomerSelect(client, interaction) {
     paymentId,
     customerId,
     staffId: draft.staffId,
-    description: draft.description,
     robuxAmount: draft.robuxAmount,
     guildId: draft.guildId,
     channelId: draft.channelId,
