@@ -54,3 +54,23 @@ export function buildCurrencyChoiceConfirmEmbed({ payment, currency, convertedAm
         `Confirm to generate a card / Apple Pay / Google Pay payment link in **${currency}**, or go back to change your currency.`
     );
 }
+
+/**
+ * Service agreement gate - shown after the Robux/currency choice is
+ * confirmed, before anything is actually generated (Gamepass/T-Shirt
+ * select, or the online payment link).
+ */
+export function buildTosAgreementEmbed({ payment, value }) {
+  const { embedColors } = getConfig();
+  const payingWith = value === "ROBUX" ? formatRobux(payment.robuxAmount) : `${value} (via card / Apple Pay / Google Pay)`;
+
+  return new EmbedBuilder()
+    .setTitle("Service Agreement")
+    .setColor(embedColors.warning)
+    .setDescription(
+      `**Payment ID:** \`${payment.paymentId}\`\n` +
+        `**Paying with:** ${payingWith}\n\n` +
+        `Before continuing, please read our [Service Agreement](https://nuggetstudios.xyz/tos).\n\n` +
+        `Click **I Agree** below to confirm you've read and accept it and continue, or **Back** to change your payment choice.`
+    );
+}

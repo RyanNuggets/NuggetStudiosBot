@@ -20,7 +20,6 @@ export function buildPaymentCompleteEmbed({ payment, staffId }) {
       { name: "Payment Method", value: payment.method, inline: true },
       { name: "Amount Paid", value: amountDisplay, inline: true },
       { name: "Currency", value: isRoblox ? "Robux" : payment.currency, inline: true },
-      { name: "Description", value: payment.description || "None", inline: true },
       { name: "Payment ID", value: `\`${payment.paymentId}\``, inline: true },
       { name: "Status", value: "Completed", inline: true }
     )
