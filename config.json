@@ -50,10 +50,10 @@
       "errors": "1531997194536882176"
     },
     "embedColors": {
-      "default": "#5865F2",
-      "success": "#57F287",
-      "warning": "#FEE75C",
-      "danger": "#ED4245"
+      "default": "#CDF22B",
+      "success": "#CDF22B",
+      "warning": "#CDF22B",
+      "danger": "#CDF22B"
     },
     "paymentExpiryMinutes": 30
   }
