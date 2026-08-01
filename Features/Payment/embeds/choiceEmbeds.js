@@ -1,76 +1,78 @@
 // Features/Payment/embeds/choiceEmbeds.js
-import { EmbedBuilder } from "discord.js";
 import getConfig from "../config/config.js";
 import { formatCurrency, formatRobux } from "../utils/pricing.js";
+import { buildContainer, Emoji } from "./brand.js";
 
 /**
- * First screen shown after a customer is picked: choose Robux or a currency.
+ * First screen shown after a customer is picked: choose Robux or a
+ * currency. `actionRow` is the select menu from
+ * buttons/currencySelectMenu.js.
  */
-export function buildCurrencyChoiceEmbed({ payment }) {
+export function buildCurrencyChoiceEmbed({ payment, actionRow }) {
   const { embedColors } = getConfig();
 
-  return new EmbedBuilder()
-    .setTitle("How would you like to pay?")
-    .setColor(embedColors.default)
-    .setDescription(
-      `**Payment ID:** \`${payment.paymentId}\`\n` +
-        `**Customer:** <@${payment.customerId}>\n` +
-        (payment.description ? `**Description:** ${payment.description}\n` : "") +
-        `**Robux Amount:** ${formatRobux(payment.robuxAmount)}\n\n` +
-        `Choose **Robux** below to pay via Gamepass/T-Shirt, or pick a currency to pay by card / Apple Pay / Google Pay.`
-    )
-    .setTimestamp();
+  const content =
+    `# ${Emoji.greenCheck} How would you like to pay?\n` +
+    `> Ready to complete your purchase?\n\n` +
+    `-# **\`Customer\`**   ${Emoji.dot}   <@${payment.customerId}>\n` +
+    `-# **\`Payment ID\`**   ${Emoji.dot}   \`${payment.paymentId}\`\n` +
+    `## Choose a Payment Method\n` +
+    `${Emoji.robux} __Robux__\n` +
+    `> Pay instantly using a Gamepass or Classic T-Shirt.\n\n` +
+    `${Emoji.creditCard} __Credit / Debit Card__\n` +
+    `> Visa, Mastercard, Apple Pay & Google Pay.`;
+
+  return buildContainer({ content, accentColorHex: embedColors.default, actionRows: [actionRow] });
 }
 
 /**
- * Confirm/back screen after picking Robux.
+ * Confirm/back screen shown after picking Robux or a currency. One
+ * template covers both paths - only the closing "Supports ..." line and
+ * the amount shown change depending on `value`.
+ *
+ * @param {object} params
+ * @param {object} params.payment
+ * @param {"ROBUX"|"AED"|"USD"|"EUR"|"GBP"} params.value
+ * @param {number} [params.convertedAmount] - required when value isn't "ROBUX"
+ * @param {import('discord.js').ActionRowBuilder} params.actionRow - Confirm/Back buttons
  */
-export function buildRobuxChoiceConfirmEmbed({ payment }) {
+export function buildChoiceConfirmEmbed({ payment, value, convertedAmount, actionRow }) {
   const { embedColors } = getConfig();
+  const isRobux = value === "ROBUX";
 
-  return new EmbedBuilder()
-    .setTitle("Pay with Robux?")
-    .setColor(embedColors.warning)
-    .setDescription(
-      `**Payment ID:** \`${payment.paymentId}\`\n` +
-        `**Amount:** ${formatRobux(payment.robuxAmount)}\n\n` +
-        `Confirm to continue with a Robux Gamepass/T-Shirt purchase, or go back to change your choice.`
-    );
+  const priceDisplay = isRobux ? formatRobux(payment.robuxAmount) : formatCurrency(convertedAmount, value);
+  const supportsLine = isRobux
+    ? "Supports **Gamepass** and **Classic T-Shirt** purchases."
+    : "Supports **Visa, Mastercard, Apple Pay,** and **Google Pay**.";
+
+  const content =
+    `# ${Emoji.wallet} Confirm Payment\n` +
+    `> Review your payment before continuing.\n\n` +
+    `-# **\`Payment ID\`**   ${Emoji.dot}   \`${payment.paymentId}\`\n` +
+    `## Amount Due\n` +
+    `${Emoji.dot}**${priceDisplay}**\n\n` +
+    `> Press **Confirm** to generate your secure payment link, or go back to change your currency.\n\n` +
+    `> ${supportsLine}`;
+
+  return buildContainer({ content, accentColorHex: embedColors.warning, actionRows: [actionRow] });
 }
 
 /**
- * Confirm/back screen after picking a currency - previews the converted
- * amount before anything is generated.
+ * Service agreement gate - shown after the choice is confirmed, before
+ * anything is actually generated.
+ *
+ * @param {import('discord.js').ActionRowBuilder} actionRow - Read/I Agree/Back buttons
  */
-export function buildCurrencyChoiceConfirmEmbed({ payment, currency, convertedAmount }) {
+export function buildTosAgreementEmbed({ payment, actionRow }) {
   const { embedColors } = getConfig();
 
-  return new EmbedBuilder()
-    .setTitle(`Pay ${formatCurrency(convertedAmount, currency)}?`)
-    .setColor(embedColors.warning)
-    .setDescription(
-      `**Payment ID:** \`${payment.paymentId}\`\n` +
-        `**Amount:** ${formatCurrency(convertedAmount, currency)}\n\n` +
-        `Confirm to generate a card / Apple Pay / Google Pay payment link in **${currency}**, or go back to change your currency.`
-    );
-}
+  const content =
+    `# ${Emoji.document} Service Agreement\n` +
+    `> Please review our terms before continuing.\n\n` +
+    `-# **\`Payment ID\`** ${Emoji.dot} \`${payment.paymentId}\`\n\n` +
+    `## ${Emoji.shield} Before You Continue\n` +
+    `> By selecting **I Agree**, you confirm that you've read and accepted the **Nugget Studios Service Agreement** and wish to proceed with your payment.\n\n` +
+    `> If you'd like to use a different payment method, press **Back** below.`;
 
-/**
- * Service agreement gate - shown after the Robux/currency choice is
- * confirmed, before anything is actually generated (Gamepass/T-Shirt
- * select, or the online payment link).
- */
-export function buildTosAgreementEmbed({ payment, value }) {
-  const { embedColors } = getConfig();
-  const payingWith = value === "ROBUX" ? formatRobux(payment.robuxAmount) : `${value} (via card / Apple Pay / Google Pay)`;
-
-  return new EmbedBuilder()
-    .setTitle("Service Agreement")
-    .setColor(embedColors.warning)
-    .setDescription(
-      `**Payment ID:** \`${payment.paymentId}\`\n` +
-        `**Paying with:** ${payingWith}\n\n` +
-        `Before continuing, please read our [Service Agreement](https://nuggetstudios.xyz/tos).\n\n` +
-        `Click **I Agree** below to confirm you've read and accept it and continue, or **Back** to change your payment choice.`
-    );
+  return buildContainer({ content, accentColorHex: embedColors.warning, actionRows: [actionRow] });
 }
