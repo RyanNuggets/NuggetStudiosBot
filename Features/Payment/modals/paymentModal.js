@@ -3,8 +3,8 @@
 // IMPORTANT DESIGN NOTE:
 // Discord's Modal API only supports Text Input components (no user/select
 // menus inside modals) on the widely-deployed API version. So this modal
-// collects Robux Amount + Description, and immediately after submission the
-// bot follows up with an ephemeral User Select menu to pick the Customer -
+// collects just the Robux Amount, and immediately after submission the bot
+// follows up with an ephemeral User Select menu to pick the Customer -
 // functionally identical to having it "in the modal" from the staff
 // member's point of view (one extra click), without depending on
 // modal-component support that may not exist on your discord.js version.
@@ -26,36 +26,54 @@ export function buildPaymentModal() {
     .setLabel("Robux Amount")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("e.g. 500")
-    .setRequired(true);
-
-  const descriptionInput = new TextInputBuilder()
-    .setCustomId("description")
-    .setLabel("Description (optional)")
-    .setStyle(TextInputStyle.Paragraph)
     .setRequired(false);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(robuxInput),
-    new ActionRowBuilder().addComponents(descriptionInput)
-  );
+  const usdInput = new TextInputBuilder()
+    .setCustomId("usdAmount")
+    .setLabel("USD Amount")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g. 20")
+    .setRequired(false);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(robuxInput), new ActionRowBuilder().addComponents(usdInput));
 
   return modal;
 }
 
 /**
- * Parses+validates the modal submission's raw field values.
- * @returns {{ robuxAmount: number, description: string|null } | { error: string }}
+ * Parses+validates the modal submission's raw field values. Staff enters
+ * EXACTLY ONE of Robux Amount or USD Amount - whichever is filled in
+ * becomes the payment's price. If a USD amount was given, it's converted
+ * to an equivalent Robux amount so the rest of the payment flow (which is
+ * built around a Robux baseline) works unchanged.
+ *
+ * @returns {{ robuxAmount: number|null, usdAmount: number|null } | { error: string }}
  */
 export function parsePaymentModalSubmission(interaction) {
   const robuxRaw = interaction.fields.getTextInputValue("robuxAmount")?.trim();
-  const description = interaction.fields.getTextInputValue("description")?.trim() || null;
+  const usdRaw = interaction.fields.getTextInputValue("usdAmount")?.trim();
 
-  const robuxAmount = Number(robuxRaw.replace(/,/g, ""));
-  if (!Number.isFinite(robuxAmount) || robuxAmount <= 0 || !Number.isInteger(robuxAmount)) {
-    return { error: "Robux Amount must be a positive whole number." };
+  const hasRobux = !!robuxRaw;
+  const hasUsd = !!usdRaw;
+
+  if (hasRobux === hasUsd) {
+    // Both filled in, or both left blank - either way it's ambiguous.
+    return { error: "Please enter exactly one of Robux Amount or USD Amount (not both, not neither)." };
   }
 
-  return { robuxAmount, description };
+  if (hasRobux) {
+    const robuxAmount = Number(robuxRaw.replace(/,/g, ""));
+    if (!Number.isFinite(robuxAmount) || robuxAmount <= 0 || !Number.isInteger(robuxAmount)) {
+      return { error: "Robux Amount must be a positive whole number." };
+    }
+    return { robuxAmount, usdAmount: null };
+  }
+
+  const usdAmount = Number(usdRaw.replace(/,/g, ""));
+  if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
+    return { error: "USD Amount must be a positive number." };
+  }
+  return { robuxAmount: null, usdAmount };
 }
 
 // --- Optional: native user-select-in-modal, if your discord.js supports it ---
