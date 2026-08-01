@@ -41,6 +41,11 @@ export const CustomId = {
   CHOICE_CONFIRM: "pay:choice:confirm", // pay:choice:confirm:{paymentId}:{value}  (value = "ROBUX" or a currency code)
   CHOICE_BACK: "pay:choice:back", // pay:choice:back:{paymentId}
 
+  // Service agreement gate - shown after the choice is confirmed, before
+  // anything is actually generated (Gamepass/T-Shirt select or the online
+  // payment link). See handlers/paymentChoiceHandler.js.
+  TOS_AGREE: "pay:tos:agree", // pay:tos:agree:{paymentId}:{value}
+
   // /payment diagnose - see commands/paymentDiagnose.js
   DIAGNOSE_SELECT: "pay:diagnose:select", // pay:diagnose:select:{paymentId}
   DIAGNOSE_REFRESH: "pay:diagnose:refresh", // pay:diagnose:refresh:{paymentId}
