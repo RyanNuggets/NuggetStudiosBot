@@ -80,6 +80,7 @@ export async function createPayment(data) {
     channelId: data.channelId,
     messageId: data.messageId ?? null,
     createdAt: now,
+    tosAgreedAt: null,
     completedAt: null,
     expiredAt: null,
   };
