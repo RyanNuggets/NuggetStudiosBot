@@ -12,7 +12,7 @@ async function handleGuildMemberAdd(member) {
         return;
     }
 
-    const welcomeMessage = `Welcome to **:nsgreen: Nugget Studios**, ${member}! We are now at **${membercount}** members.`;
+    const welcomeMessage = `Welcome to **<:nsgreen:1527102715371716688> Nugget Studios**, ${member}! We are now at **${membercount}** members.`;
 
     const mcButton = new ButtonBuilder()
         .setCustomId("mcButton")
