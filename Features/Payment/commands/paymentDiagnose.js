@@ -28,6 +28,7 @@ import { getLinkedRobloxId } from "../providers/bloxlinkProvider.js";
 import { verifyRobuxPaymentReceived } from "../providers/robloxProvider.js";
 import { getZiinaPaymentStatus } from "../providers/ziinaProvider.js";
 import { logEvent } from "../utils/logger.js";
+import { buildPaymentForceExpiredEmbed } from "../embeds/statusEmbeds.js";
 
 const ACTIVE_STATUSES = [PaymentStatus.PENDING, PaymentStatus.AWAITING_VERIFICATION, PaymentStatus.AWAITING_PAYMENT];
 
@@ -352,6 +353,22 @@ export async function handleDiagnoseForceExpireConfirm(client, interaction) {
   const updated = await markExpired(paymentId);
   if (!updated) {
     return interaction.editReply({ content: "That payment no longer exists.", embeds: [], components: [] });
+  }
+
+  // Update the original payment message (in the customer-facing channel) so
+  // it doesn't keep showing a stale "pay now" button - same pattern the
+  // auto-expiry sweep uses.
+  if (updated.channelId && updated.messageId) {
+    try {
+      const channel = await client.channels.fetch(updated.channelId);
+      const message = await channel.messages.fetch(updated.messageId);
+      await message.edit({
+        flags: MessageFlags.IsComponentsV2,
+        components: [buildPaymentForceExpiredEmbed({ payment: updated, staffId: interaction.user.id })],
+      });
+    } catch {
+      // Message may have been deleted - nothing more to do.
+    }
   }
 
   await logEvent(
