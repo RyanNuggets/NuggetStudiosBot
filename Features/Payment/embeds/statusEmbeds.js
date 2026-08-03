@@ -54,6 +54,25 @@ export function buildPaymentExpiredEmbed({ payment, minutes }) {
 }
 
 /**
+ * Shown when staff force-expire a payment via /payment diagnose. Same look
+ * as buildPaymentExpiredEmbed (auto-expiry), just worded for a manual
+ * staff action instead of an inactivity timeout.
+ */
+export function buildPaymentForceExpiredEmbed({ payment, staffId }) {
+  const { embedColors } = getConfig();
+
+  const content =
+    `# ⏱️ Payment Expired
+> This payment was manually expired by staff.
+
+-# **\`Payment ID\`**   ${Emoji.dot}   \`${payment.paymentId}\`` +
+    (staffId ? `
+-# **\`Expired By\`**   ${Emoji.dot}   <@${staffId}>` : "");
+
+  return buildContainer({ content, accentColorHex: embedColors.danger });
+}
+
+/**
  * No Discohook template was provided for this one either - same approach.
  */
 export function buildPaymentNotDetectedEmbed() {
