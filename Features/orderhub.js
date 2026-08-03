@@ -186,7 +186,7 @@ function buildPaymentPrompt(orderTypeLabel, encodedOrderType) {
               "To proceed with your order, please select your **preferred payment method** below. Once payment is confirmed, your order will be officially queued.\n\n" +
               "<:wallet:1528165051859468348> **Available Payment Options:**\n" +
               "<:creditcard:1528164289192525996> **USD** <:dot:1528163225806307519> PayPal / Credit/Debit Card\n" +
-              "<:robux:1528164258251018281> Robux <:dot:1528163225806307519> Robux payments are accepted for eligible orders"
+              "<:robux:1528164258251018281> **Robux** <:dot:1528163225806307519> Robux payments are accepted for eligible orders"
           },
           {
             type: 1,
