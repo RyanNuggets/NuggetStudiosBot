@@ -142,12 +142,7 @@ const ORDER_HUB_LAYOUT = {
           components: [
             { type: 2, style: 2, label: "Liveries", custom_id: IDS.orderLiveriesBtn },
             { type: 2, style: 2, label: "Graphics", custom_id: IDS.orderGraphicsBtn },
-            { type: 2, style: 2, label: "Animated Logos", custom_id: IDS.orderAnimatedLogosBtn }
-          ]
-        },
-        {
-          type: 1,
-          components: [
+            { type: 2, style: 2, label: "Animated Logos", custom_id: IDS.orderAnimatedLogosBtn },
             { type: 2, style: 2, label: "Bot Orders", custom_id: IDS.orderBotOrdersBtn },
             { type: 2, style: 2, label: "Bot Hosting", custom_id: IDS.orderBotHostingBtn }
           ]
