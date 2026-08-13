@@ -13,11 +13,20 @@
     "staffRoleId": "1485623742439620709",
     "categoryLiveriesId": "1526910691317907456",
     "categoryGraphicsId": "1526910666362065047",
+    "categoryAnimatedLogosId": "1537588031194791966",
+    "categoryBotOrdersId": "1537587675920605316",
+    "categoryBotHostingId": "1537587906515046533",
     "orderLogsChannelId": "1526910816413024416",
     "reviewChannelId": "1485805640860307516",
     "serviceChangeRoleId": "1485623742439620709",
     "forceUnclaimRoleId": "1485623742439620709",
-    "serviceStatus": { "liveries": "open", "graphics": "open" }
+    "serviceStatus": {
+      "liveries": "open",
+      "graphics": "open",
+      "animatedLogos": "open",
+      "botOrders": "open",
+      "botHosting": "open"
+    }
   },
   "packages": {
     "staffRoleId": "1485624922972622859",
