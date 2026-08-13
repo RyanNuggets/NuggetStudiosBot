@@ -72,6 +72,9 @@ const IDS = {
   // public order hub buttons
   orderLiveriesBtn: "orderhub_liveries",
   orderGraphicsBtn: "orderhub_graphics",
+  orderAnimatedLogosBtn: "orderhub_animatedlogos",
+  orderBotOrdersBtn: "orderhub_botorders",
+  orderBotHostingBtn: "orderhub_bothosting",
 
   // payment buttons (encoded with order type)
   payUsd: "orderhub_usd",
@@ -123,19 +126,30 @@ const ORDER_HUB_LAYOUT = {
           type: 10,
           content:
             "## **Order Here**\n" +
-            "Bring your vision to life with **Nugget Studios**. We specialize in **custom liveries, graphics, and brand identity**, delivering ***high-quality, affordable*** designs with **precision, consistency, and fast turnaround times**. Every order is carefully managed by our **trusted creative team** from **concept to completion**.\n\n" +
+            "Bring your vision to life with **Nugget Studios**. We specialize in **custom liveries, graphics, animated logos, bots, and bot hosting**, delivering ***high-quality, affordable*** designs and services with **precision, consistency, and fast turnaround times**. Every order is carefully managed by our **trusted creative team** from **concept to completion**.\n\n" +
             "**Start an order** and our team will review your request shortly. **Choose one of the options below to continue.**\n\n" +
             "-# <:shield:1528162879524704407> All orders are subject to our Terms of Service: https://nuggetstudios.xyz/tos.\n\n" +
             "<:shoppingcart:1528163263861231847> **Select an Order Type:**\n" +
             "<:dot:1528163225806307519> **Liveries**  **`-`**  Order a custom vehicle livery\n" +
-            "<:dot:1528163225806307519> **Graphics**  **`-`**  Order logos, banners, branding, and other custom graphics"
+            "<:dot:1528163225806307519> **Graphics**  **`-`**  Order logos, banners, branding, and other custom graphics\n" +
+            "<:dot:1528163225806307519> **Animated Logos**  **`-`**  Order a custom animated logo\n" +
+            "<:dot:1528163225806307519> **Bot Orders**  **`-`**  Order a custom Discord bot\n" +
+            "<:dot:1528163225806307519> **Bot Hosting**  **`-`**  Order hosting for your Discord bot"
         },
         { type: 14, spacing: 2 },
         {
           type: 1,
           components: [
             { type: 2, style: 2, label: "Liveries", custom_id: IDS.orderLiveriesBtn },
-            { type: 2, style: 2, label: "Graphics", custom_id: IDS.orderGraphicsBtn }
+            { type: 2, style: 2, label: "Graphics", custom_id: IDS.orderGraphicsBtn },
+            { type: 2, style: 2, label: "Animated Logos", custom_id: IDS.orderAnimatedLogosBtn }
+          ]
+        },
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 2, label: "Bot Orders", custom_id: IDS.orderBotOrdersBtn },
+            { type: 2, style: 2, label: "Bot Hosting", custom_id: IDS.orderBotHostingBtn }
           ]
         },
         { type: 14, spacing: 2 },
@@ -411,7 +425,15 @@ async function sendPlainTranscriptToDM(client, userId, orderId, transcriptText) 
 
 // ---------------- ORDER OPEN MESSAGE ----------------
 function orderTypeLabelFrom(orderType) {
-  return orderType === "graphics" ? "Graphics" : "Liveries";
+  return orderType === "graphics"
+    ? "Graphics"
+    : orderType === "animatedLogos"
+    ? "Animated Logos"
+    : orderType === "botOrders"
+    ? "Bot Orders"
+    : orderType === "botHosting"
+    ? "Bot Hosting"
+    : "Liveries";
 }
 
 function payTypeLabelFrom(payType) {
@@ -707,7 +729,7 @@ async function closeOrderNow(client, interaction, channel, oh) {
   const payType = record.payType ?? null;
   const handlerId = record.claimedBy ?? "none";
 
-  const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
+  const orderTypeLabel = orderTypeLabelFrom(orderType);
   const payTypeLabel = payType === "usd" ? "USD" : payType === "robux" ? "Robux" : "Unknown";
 
   // Log: closed
@@ -826,10 +848,25 @@ export async function handleOrderHubInteractions(client, interaction) {
     const channel = interaction.channel;
 
     // ORDER TYPE -> PAYMENT PROMPT
-    if (interaction.customId === IDS.orderLiveriesBtn || interaction.customId === IDS.orderGraphicsBtn) {
+    if (
+      interaction.customId === IDS.orderLiveriesBtn ||
+      interaction.customId === IDS.orderGraphicsBtn ||
+      interaction.customId === IDS.orderAnimatedLogosBtn ||
+      interaction.customId === IDS.orderBotOrdersBtn ||
+      interaction.customId === IDS.orderBotHostingBtn
+    ) {
       // SERVICE OPEN/CLOSE GATE (set via /servicechange)
-      const serviceKey = interaction.customId === IDS.orderLiveriesBtn ? "liveries" : "graphics";
-      const serviceLabel = serviceKey === "liveries" ? "Liveries" : "Graphics";
+      const serviceKey =
+        interaction.customId === IDS.orderLiveriesBtn
+          ? "liveries"
+          : interaction.customId === IDS.orderGraphicsBtn
+          ? "graphics"
+          : interaction.customId === IDS.orderAnimatedLogosBtn
+          ? "animatedLogos"
+          : interaction.customId === IDS.orderBotOrdersBtn
+          ? "botOrders"
+          : "botHosting";
+      const serviceLabel = orderTypeLabelFrom(serviceKey);
       const serviceStatus = oh?.serviceStatus?.[serviceKey] ?? "open";
 
       if (serviceStatus === "closed") {
@@ -848,7 +885,16 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (interaction.customId === IDS.orderLiveriesBtn) {
         return interaction.reply(buildPaymentPrompt("Liveries", "liveries"));
       }
-      return interaction.reply(buildPaymentPrompt("Graphics", "graphics"));
+      if (interaction.customId === IDS.orderGraphicsBtn) {
+        return interaction.reply(buildPaymentPrompt("Graphics", "graphics"));
+      }
+      if (interaction.customId === IDS.orderAnimatedLogosBtn) {
+        return interaction.reply(buildPaymentPrompt("Animated Logos", "animatedLogos"));
+      }
+      if (interaction.customId === IDS.orderBotOrdersBtn) {
+        return interaction.reply(buildPaymentPrompt("Bot Orders", "botOrders"));
+      }
+      return interaction.reply(buildPaymentPrompt("Bot Hosting", "botHosting"));
     }
 
     // PAYMENT -> CREATE ORDER TICKET
@@ -875,15 +921,32 @@ export async function handleOrderHubInteractions(client, interaction) {
       if (!oh?.staffRoleId) {
         return interaction.editReply({ content: "Missing orderhub.staffRoleId in config.json" });
       }
-      if (!oh?.categoryLiveriesId || !oh?.categoryGraphicsId) {
+      if (
+        !oh?.categoryLiveriesId ||
+        !oh?.categoryGraphicsId ||
+        !oh?.categoryAnimatedLogosId ||
+        !oh?.categoryBotOrdersId ||
+        !oh?.categoryBotHostingId
+      ) {
         return interaction.editReply({
-          content: "Missing orderhub.categoryLiveriesId / orderhub.categoryGraphicsId in config.json"
+          content:
+            "Missing orderhub.categoryLiveriesId / orderhub.categoryGraphicsId / orderhub.categoryAnimatedLogosId / orderhub.categoryBotOrdersId / orderhub.categoryBotHostingId in config.json"
         });
       }
 
-      // Category is determined by order type (Liveries/Graphics); the
-      // channel name is differentiated by payment method (usd/robux).
-      const parentId = orderType === "graphics" ? oh.categoryGraphicsId : oh.categoryLiveriesId;
+      // Category is determined by order type (Liveries/Graphics/Animated
+      // Logos/Bot Orders/Bot Hosting); the channel name is differentiated by
+      // payment method (usd/robux).
+      const parentId =
+        orderType === "graphics"
+          ? oh.categoryGraphicsId
+          : orderType === "animatedLogos"
+          ? oh.categoryAnimatedLogosId
+          : orderType === "botOrders"
+          ? oh.categoryBotOrdersId
+          : orderType === "botHosting"
+          ? oh.categoryBotHostingId
+          : oh.categoryLiveriesId;
 
       const channelName = safeChannelName(`${payType}-${interaction.user.username}`);
 
@@ -926,7 +989,7 @@ export async function handleOrderHubInteractions(client, interaction) {
         claimedBy: null
       });
 
-      const orderTypeLabel = orderType === "graphics" ? "Graphics" : "Liveries";
+      const orderTypeLabel = orderTypeLabelFrom(orderType);
       const payTypeLabel = payType === "usd" ? "USD" : "Robux";
 
       const openMsg = await postRaw(
