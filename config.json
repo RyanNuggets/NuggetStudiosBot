@@ -51,7 +51,7 @@
     "robloxCookieEnvVar": "ROBLOX_COOKIE",
     "robloxApiKeyEnvVar": "ROBLOX_OPEN_CLOUD_KEY",
     "robuxToAed": { "robux": 1000, "aed": 37 },
-    "ziina": { "apiKey": "XSpxsa091xiaE6rKE5sT/XOUX5Qafrt+jAIDRdo6qF8/BrsuXEQIbNbZUvHZmpPQ", "testMode": true },
+    "ziina": { "apiKey": "XSpxsa091xiaE6rKE5sT/XOUX5Qafrt+jAIDRdo6qF8/BrsuXEQIbNbZUvHZmpPQ", "testMode": false },
     "exchangeRates": { "provider": "https://open.er-api.com/v6/latest/AED", "cacheMinutes": 30 },
     "logChannels": {
       "default": "1531997194536882176",
